@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     @property
     def storage_path(self) -> Path:
         p = Path(self.storage_root)
+        if not p.is_absolute():
+            # Resolve relative paths against the backend package root (apps/backend),
+            # not the process's current working directory — otherwise running
+            # commands (pytest, uvicorn, scripts) from different directories would
+            # each create their own separate storage tree.
+            p = Path(__file__).resolve().parents[2] / p
         p.mkdir(parents=True, exist_ok=True)
         (p / "uploads").mkdir(parents=True, exist_ok=True)
         (p / "reports").mkdir(parents=True, exist_ok=True)
