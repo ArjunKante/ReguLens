@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+
+# Env
+.env
+.env.local
+
+# Data / uploads (runtime artifacts, not source)
+apps/backend/storage/uploads/*
+!apps/backend/storage/uploads/.gitkeep
+apps/backend/storage/reports/*
+!apps/backend/storage/reports/.gitkeep
+
+# Playwright
+apps/backend/.playwright/
+test-results/
+playwright-report/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# tmp
+tmp_legal/
+*.log
