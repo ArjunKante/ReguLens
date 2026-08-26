@@ -66,6 +66,17 @@ def test_manufacturer_bare_noun_without_separator_is_not_matched():
     assert _values_for("Importer: Global Traders Pvt Ltd", F.IMPORTER_NAME)
 
 
+def test_net_quantity_recognizes_net_content_wording():
+    """User-reported: a real Amul milk pouch declares quantity under "Net
+    Content" (verified against the physical pack), which the keyword list
+    (quantity/qty/weight/wt/volume/vol) didn't cover — a correctly-declared
+    pack was reported as missing the declaration entirely
+    (POTENTIAL_NON_COMPLIANCE) just because of the accepted-synonym gap."""
+    assert _values_for("Net Content: 450 ml", F.NET_QUANTITY) == ["450 ml"]
+    assert _values_for("Net Contents 450 ml", F.NET_QUANTITY) == ["450 ml"]
+    assert _values_for("NET CONTENT 450ML", F.NET_QUANTITY)
+
+
 def test_net_quantity_unanchored_number_unit_is_not_matched():
     """Live-listing test found the old unanchored net_quantity fallback
     (bare "\\d+\\s*(?:g|kg|ml|...)", no "net"/"quantity" keyword required)
