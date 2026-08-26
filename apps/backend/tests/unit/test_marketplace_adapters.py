@@ -42,6 +42,11 @@ def test_amazon_listing_extracts_declaration_bullets():
         return c.value if c else None
 
     assert "Tasty Foods" in (best("manufacturer_name") or "")
+    # Regression (caught live against a real Amazon.in page): a detail-bullet
+    # "Is Discontinued By Manufacturer : No" merely mentions "Manufacturer"
+    # in passing — it is not a manufacturer_name declaration and must never
+    # be read as one, at any confidence, not just excluded from best().
+    assert not any(c.value == "No" for c in product.all_for("manufacturer_name"))
     assert best("country_of_origin") == "India"
     assert "100" in (best("net_quantity") or "")
     # MRP comes from the explicit "M.R.P ‏ : ‎ ₹60.00" bullet, not a raw
