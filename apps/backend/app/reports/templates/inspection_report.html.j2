@@ -21,12 +21,20 @@
   .evidence-item { margin: 3px 0; padding-left: 8px; border-left: 2px solid #ccc; }
   .footer { margin-top: 30px; font-size: 9px; color: #777; border-top: 1px solid #ccc; padding-top: 8px; }
   .rule-source { font-size: 9px; color: #555; }
+  .demo-banner { background: #7c3aed; color: #fff; font-weight: bold; padding: 10px; margin-bottom: 12px; text-align: center; }
 </style>
 </head>
 <body>
 
-<h1>LM-SCAN Inspection Report</h1>
+<h1>LM-SCAN Inspection Report{% if ctx.inspection.is_demo %} — DEMO{% endif %}</h1>
 <p class="subtitle">AI-Assisted Online Legal Metrology Compliance Inspection System</p>
+
+{% if ctx.inspection.is_demo %}
+<div class="demo-banner">
+  DEMO INSPECTION — sourced from a bundled, reproducible fixture (a real listing capture) instead of a live
+  fetch. This is NOT a finding about a real, currently-live listing and must never be treated as one.
+</div>
+{% endif %}
 
 <div class="disclaimer">{{ ctx.disclaimer }}</div>
 

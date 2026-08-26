@@ -29,6 +29,23 @@ export function createInspection(sourceUrl?: string, notes?: string) {
   return api.post<InspectionSummary>("/inspections", { source_url: sourceUrl?.trim() || null, notes });
 }
 
+/** Starts a Demo Inspection — reproducible, network-independent, sourced from
+ * a bundled real-listing fixture instead of a live fetch, for demos where
+ * live scraping's inherent flakiness (network, anti-bot, rate limits) isn't
+ * acceptable. Runs the exact same pipeline/compliance engine as a real scan;
+ * only the fetch step's data source differs. Clearly labeled everywhere via
+ * `is_demo` on the resulting inspection — never presented as a real finding. */
+export function createDemoInspection() {
+  return api.post<InspectionSummary>("/inspections/demo", {});
+}
+
+/** Same auth-required-blob pattern as fetchReportObjectUrl — a plain <img
+ * src> can't carry the Authorization header an evidence image requires. */
+export async function fetchImageObjectUrl(inspectionId: string, imageId: string): Promise<string> {
+  const blob = await api.getBlob(`/inspections/${inspectionId}/images/${imageId}/file`);
+  return URL.createObjectURL(blob);
+}
+
 export function scanUrl(id: string) {
   return api.post<{ status: string }>(`/inspections/${id}/scan-url`, {});
 }

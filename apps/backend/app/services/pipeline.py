@@ -36,11 +36,12 @@ from app.models.enums import (
 )
 from app.models.inspection import Inspection, PipelineEvent
 from app.models.scraping import OCRResult, ProductImage, WebExtraction, WebPage
+from app.demo_fixtures import list_demo_image_paths
 from app.nlp.declaration_extractor import extract_declarations_from_ocr, extract_declarations_from_webpage
 from app.repositories.product_repository import get_or_create_product, touch_last_checked
 from app.services.classification_service import classify_product
 from app.services.image_service import download_image, process_image_bytes
-from app.services.scraping_service import scrape_product_page
+from app.services.scraping_service import scrape_demo_fixture, scrape_product_page
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -181,6 +182,8 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
         logger.error("run_inspection_pipeline: inspection %s not found", inspection_id)
         return
 
+    pipeline_started_at = time.monotonic()
+
     inspection.status = InspectionStatus.IN_PROGRESS.value
     db.commit()
 
@@ -190,7 +193,10 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
 
     with _stage(db, inspection, PipelineStage.FETCH, "Fetching product page…"):
         if inspection.source_url:
-            web_page, scraped_product = scrape_product_page(db, inspection, inspection.source_url)
+            if inspection.is_demo:
+                web_page, scraped_product = scrape_demo_fixture(db, inspection)
+            else:
+                web_page, scraped_product = scrape_product_page(db, inspection, inspection.source_url)
             inspection.platform = web_page.platform
 
             if scraped_product is not None:
@@ -203,6 +209,26 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
                 inspection.product_id = product.id
                 touch_last_checked(db, product)
                 db.commit()
+
+                # Demo Hardening live-listing test found a real "false
+                # success" mode: the HTTP fetch can return 200 (so
+                # web_page.fetch_status is honestly SUCCESS) while the page
+                # never actually rendered any product content at all — e.g.
+                # Blinkit's product page requires a delivery-location
+                # context a stateless single-shot fetch never provides, and
+                # silently serves its generic app-shell/homepage instead.
+                # Nothing upstream can distinguish that from a real listing,
+                # so it's flagged here (no product_name found via *any*
+                # extraction strategy) with a message an officer can act on,
+                # instead of quietly completing with near-empty results.
+                if not any(c.field_name == "product_name" for c in scraped_product.field_candidates):
+                    _record(
+                        db, inspection, PipelineStage.FETCH, PipelineStageStatus.FAILED,
+                        "The page was fetched successfully, but no product name/details could be "
+                        "extracted from it — the listing may require a delivery location or "
+                        "client-side rendering this fetcher couldn't complete. Upload screenshots "
+                        "to continue this inspection.",
+                    )
             elif web_page.fetch_status != WebFetchStatus.SUCCESS.value:
                 _record(
                     db, inspection, PipelineStage.FETCH, PipelineStageStatus.FAILED,
@@ -224,7 +250,14 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
         pass  # Parsing happens as part of scrape_product_page; this stage is a checkpoint for UX/progress.
 
     with _stage(db, inspection, PipelineStage.IMAGE_DOWNLOAD, "Downloading product images…") as _:
-        if scraped_product and scraped_product.images:
+        if inspection.is_demo:
+            # The fixture HTML's <img> URLs point at Flipkart's real CDN —
+            # downloading them would defeat the whole point of a
+            # network-independent demo, so this loads the bundled local
+            # fixture images directly instead (same process_image_bytes()
+            # persistence path every other image goes through).
+            _load_demo_images(db, inspection)
+        elif scraped_product and scraped_product.images:
             _download_images_parallel(db, inspection, scraped_product.images[: settings.scraper_max_images_per_product])
 
     with _stage(db, inspection, PipelineStage.IMAGE_QUALITY, "Assessing image quality…"):
@@ -291,6 +324,42 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
         inspection.current_stage = PipelineStage.DONE.value
         inspection.completed_at = dt.datetime.now(dt.timezone.utc)
         db.commit()
+
+    # Demo Hardening: "measure pipeline execution time". Per-stage durations
+    # were already recorded (each _stage() call records its own duration_ms),
+    # but nothing surfaced the total end-to-end wall-clock time anywhere.
+    # Recorded as its own PipelineEvent (stage=DONE) rather than a new
+    # column, so it's visible the same way every other stage timing already
+    # is, with no schema migration.
+    total_ms = int((time.monotonic() - pipeline_started_at) * 1000)
+    logger.info("Pipeline for inspection %s completed in %dms", inspection.id, total_ms)
+    _record(
+        db, inspection, PipelineStage.DONE, PipelineStageStatus.SUCCEEDED,
+        f"Full pipeline completed in {total_ms}ms.", duration_ms=total_ms,
+    )
+
+
+def _load_demo_images(db: Session, inspection: Inspection) -> None:
+    """Demo Inspection mode's IMAGE_DOWNLOAD step: reads the bundled fixture
+    image files straight off disk instead of downloading anything, but
+    still runs every real image through the same quality-assessment/storage
+    path a live-downloaded image would (process_image_bytes) — only the
+    network fetch is skipped, not the analysis."""
+    for path in list_demo_image_paths():
+        try:
+            content = path.read_bytes()
+            process_image_bytes(
+                db,
+                inspection_id=inspection.id,
+                content=content,
+                source_type=EvidenceSourceType.ONLINE_LISTING,
+                original_url=None,
+                original_filename=path.name,
+                content_type="image/jpeg",
+                run_ocr=False,
+            )
+        except Exception as exc:  # noqa: BLE001 — a bad fixture file must not crash the demo
+            logger.warning("Failed to load demo fixture image %s: %s", path, exc)
 
 
 def _download_images_parallel(db: Session, inspection: Inspection, scraped_images) -> None:  # noqa: ANN001

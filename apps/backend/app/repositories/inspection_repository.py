@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.compliance import ComplianceCheck
 from app.models.inspection import Inspection
 from app.models.rules import RuleVersion
+from app.models.scraping import ProductImage
 from app.models.user import User
 
 
@@ -20,12 +21,15 @@ def generate_inspection_number() -> str:
     return f"LMSCAN-{today}-{suffix}"
 
 
-def create_inspection(db: Session, *, officer: User, source_url: str | None, notes: str | None) -> Inspection:
+def create_inspection(
+    db: Session, *, officer: User, source_url: str | None, notes: str | None, is_demo: bool = False
+) -> Inspection:
     inspection = Inspection(
         inspection_number=generate_inspection_number(),
         officer_id=officer.id,
         source_url=source_url,
         notes=notes,
+        is_demo=is_demo,
     )
     db.add(inspection)
     db.commit()
@@ -39,7 +43,7 @@ def get_inspection(db: Session, inspection_id: uuid.UUID) -> Inspection | None:
         .where(Inspection.id == inspection_id)
         .options(
             selectinload(Inspection.declarations),
-            selectinload(Inspection.images),
+            selectinload(Inspection.images).selectinload(ProductImage.ocr_results),
             selectinload(Inspection.web_pages),
             selectinload(Inspection.pipeline_events),
             selectinload(Inspection.compliance_checks).selectinload(ComplianceCheck.violation),

@@ -67,7 +67,14 @@ export function InspectionHistoryPage() {
             {!loading && inspections.length === 0 && <tr><td colSpan={7}>No inspections match these filters.</td></tr>}
             {inspections.map((i) => (
               <tr key={i.id}>
-                <td><Link to={`/inspections/${i.id}`}>{i.inspection_number}</Link></td>
+                <td>
+                  <Link to={`/inspections/${i.id}`}>{i.inspection_number}</Link>
+                  {i.is_demo && (
+                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 999, background: "#7c3aed", color: "#fff" }}>
+                      DEMO
+                    </span>
+                  )}
+                </td>
                 <td>{i.product_title ?? "—"}</td>
                 <td>{i.platform ?? "—"}</td>
                 <td>{i.officer_name ?? "—"}</td>

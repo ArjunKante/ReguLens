@@ -122,3 +122,50 @@ def test_flipkart_unrelated_tables_are_not_mistaken_for_a_spec_sheet():
     fetch_result = scraper.fetch_page("https://www.flipkart.com/y/p/itm2")
     product = scraper.extract_product_data(fetch_result.html, fetch_result.url)
     assert product.best("manufacturer_name") is None
+
+
+# --- Demo Hardening regressions: found live, against real listing pages ---
+
+
+def test_amazon_css_selector_title_wins_over_generic_site_name_og_title():
+    """Live-verified against real Amazon.in pages this session: og:title is
+    set to the bare literal "Amazon" site-wide (not a per-product value),
+    so `product_title` displayed "Amazon" for every single Amazon
+    inspection even though #productTitle (verified reliable) had the real
+    name the whole time. The CSS-selector title must always win, not just
+    when the generic fallback happened to come up empty."""
+    html = """
+    <html><head>
+      <meta property="og:title" content="Amazon">
+      <title>Amazon.in: Some Product</title>
+    </head><body>
+      <span id="productTitle">Real Product Name 200g</span>
+    </body></html>
+    """
+    scraper = AmazonScraper(fetcher=StaticHTMLFetcher(html=html, url="https://www.amazon.in/dp/B0REGRESSION"))
+    fetch_result = scraper.fetch_page("https://www.amazon.in/dp/B0REGRESSION")
+    product = scraper.extract_product_data(fetch_result.html, fetch_result.url)
+    assert product.title == "Real Product Name 200g"
+
+
+def test_flipkart_css_selector_title_wins_over_noisy_seo_og_title():
+    """Live-verified against a real Flipkart page this session: both
+    og:title and <title> carry Flipkart's full SEO boilerplate ("... Price
+    in India - Buy ... online at Flipkart.com"), so product_title displayed
+    that entire sentence instead of the clean name a CSS selector already
+    had. Also regression-covers the CSS selector itself: Flipkart's real
+    title element turned out to be a bare `<h1>` with only hashed classes
+    (no child <span>), which the original span-only selectors never
+    matched at all — `h1` is now included as a broad last-resort fallback."""
+    html = """
+    <html><head>
+      <meta property="og:title" content="Real Product Name 200g Price in India - Buy Real Product Name 200g online at Flipkart.com">
+      <title>Real Product Name 200g Price in India - Buy Real Product Name 200g online at Flipkart.com</title>
+    </head><body>
+      <h1 class="v1zwn21n v1zwn27">Real Product Name 200g</h1>
+    </body></html>
+    """
+    scraper = FlipkartScraper(fetcher=StaticHTMLFetcher(html=html, url="https://www.flipkart.com/x/p/itmregression"))
+    fetch_result = scraper.fetch_page("https://www.flipkart.com/x/p/itmregression")
+    product = scraper.extract_product_data(fetch_result.html, fetch_result.url)
+    assert product.title == "Real Product Name 200g"

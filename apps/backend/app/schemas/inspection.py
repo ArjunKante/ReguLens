@@ -32,6 +32,7 @@ class InspectionSummary(BaseModel):
     product_title: str | None = None
     created_at: dt.datetime
     completed_at: dt.datetime | None
+    is_demo: bool = False
 
 
 class PipelineEventOut(BaseModel):
@@ -52,6 +53,14 @@ class DeclarationOut(BaseModel):
     source_type: str
     confidence: float
     extraction_method: str | None
+    # Exposed so the frontend can trace a declaration back to the exact
+    # image/OCR block that produced it (e.g. to highlight the matching
+    # bounding box) — the data already existed on the model, it just
+    # wasn't serialized out before (Demo Hardening: "make rule -> evidence
+    # -> finding traceability obvious").
+    source_product_image_id: uuid.UUID | None = None
+    source_ocr_result_id: uuid.UUID | None = None
+    source_web_page_id: uuid.UUID | None = None
 
 
 class EvidenceOut(BaseModel):
@@ -60,6 +69,7 @@ class EvidenceOut(BaseModel):
     evidence_type: str
     description: str
     reference: dict
+    declaration_id: uuid.UUID | None = None
 
 
 class ViolationOut(BaseModel):
@@ -108,6 +118,17 @@ class ComplianceCheckOut(BaseModel):
     review_decisions: list[ReviewDecisionOut]
 
 
+class OCRResultOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    engine: str
+    text: str
+    confidence: float
+    bounding_box: dict | None
+    """{x, y, width, height} in source-image pixels, or None if the OCR
+    engine didn't report a region for this block."""
+
+
 class ProductImageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
@@ -120,6 +141,7 @@ class ProductImageOut(BaseModel):
     glare_detected: bool | None
     quality_acceptable: bool | None
     quality_notes: str | None
+    ocr_results: list[OCRResultOut] = []
 
 
 class WebPageOut(BaseModel):
@@ -141,6 +163,7 @@ class InspectionDetail(InspectionSummary):
     images: list[ProductImageOut]
     web_pages: list[WebPageOut]
     pipeline_events: list[PipelineEventOut]
+    pipeline_duration_ms: int | None = None
 
 
 class ReviewDecisionCreate(BaseModel):

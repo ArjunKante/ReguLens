@@ -155,6 +155,116 @@ def test_reanalysis_does_not_duplicate_declarations_or_compliance_checks(
     assert inspection.status == InspectionStatus.COMPLETED.value
 
 
+def test_pipeline_flags_hollow_success_when_fetch_succeeds_with_no_product_data(
+    db: Session, inspector_user: User, loaded_rules, monkeypatch
+):
+    """Demo Hardening regression: a live-listing test found a real "false
+    success" mode — the HTTP fetch returns 200 (fetch_status is honestly
+    SUCCESS) but the page never actually rendered any product content at
+    all (a real Blinkit listing that requires a delivery-location context a
+    stateless fetch never provides, silently serving its generic app-shell/
+    homepage instead — zero <h1>, zero usable declarations). This must be
+    flagged with an actionable FETCH-stage event, not silently completed as
+    if it were a normal, successful, near-empty inspection."""
+    html = "<html><head><title>Generic App Homepage</title></head><body>Nothing product-specific here.</body></html>"
+    monkeypatch.setattr(
+        "app.services.scraping_service.get_scraper_for_url",
+        lambda u: BlinkitScraper(fetcher=StaticHTMLFetcher(html=html, url=u)),
+    )
+    monkeypatch.setattr(pipeline_module, "download_image", lambda url: None)
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url="https://blinkit.com/prn/some-product/prid/1",
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+
+    db.refresh(inspection)
+    assert inspection.status == InspectionStatus.COMPLETED.value
+    fetch_events = (
+        db.query(PipelineEvent)
+        .filter(PipelineEvent.inspection_id == inspection.id, PipelineEvent.stage == PipelineStage.FETCH.value)
+        .all()
+    )
+    assert any(
+        e.status == "FAILED" and "no product name/details could be extracted" in (e.message or "")
+        for e in fetch_events
+    )
+
+
+def test_pipeline_records_total_duration_as_a_done_stage_event(
+    db: Session, inspector_user: User, loaded_rules, monkeypatch
+):
+    """Demo Hardening: "measure pipeline execution time" — the total
+    end-to-end wall-clock duration must be recorded and readable back."""
+    html = (FIXTURES / "success_listing.html").read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.scraping_service.get_scraper_for_url",
+        lambda u: BlinkitScraper(fetcher=StaticHTMLFetcher(html=html, url=u)),
+    )
+    monkeypatch.setattr(pipeline_module, "download_image", lambda url: None)
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url="https://blinkit.com/prn/tasty-munch/prid/12345",
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+
+    done_events = (
+        db.query(PipelineEvent)
+        .filter(PipelineEvent.inspection_id == inspection.id, PipelineEvent.stage == PipelineStage.DONE.value)
+        .all()
+    )
+    assert len(done_events) == 1
+    assert done_events[0].status == "SUCCEEDED"
+    assert done_events[0].duration_ms is not None
+    assert done_events[0].duration_ms >= 0
+
+
+def test_demo_inspection_pipeline_runs_end_to_end_with_no_network_mocking(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """Demo Hardening: "add a controlled Demo Inspection mode" — a demo
+    inspection must run to completion using only the bundled fixture, with
+    NO scraper/download mocking needed at all (unlike every other pipeline
+    test here), proving it genuinely never touches the network."""
+    from app.demo_fixtures import DEMO_SOURCE_URL
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url=DEMO_SOURCE_URL,
+        is_demo=True,
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+
+    db.refresh(inspection)
+    assert inspection.status == InspectionStatus.COMPLETED.value
+    assert inspection.overall_status is not None
+    assert inspection.platform == "flipkart"
+
+    web_pages = db.query(WebPage).filter(WebPage.inspection_id == inspection.id).all()
+    assert len(web_pages) == 1
+    assert web_pages[0].scraper_name == "StaticHTMLFetcher"
+
+    declarations = db.query(Declaration).filter(Declaration.inspection_id == inspection.id).count()
+    assert declarations > 0
+
+
 def test_pipeline_handles_fetch_failure_gracefully(db: Session, inspector_user: User, loaded_rules, monkeypatch):
     """Section 25/26: a failed fetch must not crash the pipeline or leave
     the inspection stuck — it should complete with UNABLE_TO_VERIFY-heavy

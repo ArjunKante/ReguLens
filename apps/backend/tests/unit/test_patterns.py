@@ -46,3 +46,35 @@ def test_packer_and_importer_address_extraction():
     importer_text = "Imported by: Global Traders Pvt Ltd, MG Road, Bengaluru - 560001, Karnataka"
     assert _values_for(importer_text, F.IMPORTER_NAME)
     assert _values_for(importer_text, F.IMPORTER_ADDRESS)
+
+
+# --- Demo Hardening regressions: found live, against real Flipkart listing text ---
+
+
+def test_manufacturer_bare_noun_without_separator_is_not_matched():
+    """Live-listing test found this matching Flipkart's "Manufacturer info"
+    details-panel section label (a UI toggle, not a name:value pair) as
+    manufacturer_name="info". The bare noun form now requires an explicit
+    colon/dash separator; "by"-anchored phrasings are unaffected."""
+    assert not _values_for("Manufacturer info | In the Box | Pack", F.MANUFACTURER_NAME)
+    assert not _values_for("Packer details | Warranty", F.PACKER_NAME)
+    assert not _values_for("Importer info", F.IMPORTER_NAME)
+    # Still matches with an explicit separator or a "by" phrasing.
+    assert _values_for("Manufacturer: Acme Foods Pvt Ltd", F.MANUFACTURER_NAME)
+    assert _values_for("Manufactured by Acme Foods Ltd", F.MANUFACTURER_NAME)  # no colon, but "by" anchors it
+    assert _values_for("Packer: Acme Packers Ltd", F.PACKER_NAME)
+    assert _values_for("Importer: Global Traders Pvt Ltd", F.IMPORTER_NAME)
+
+
+def test_mrp_bare_currency_symbol_is_not_matched():
+    """Live-listing test found the bare "₹" trigger matching every rupee
+    amount on a real Flipkart page — a "similar products" recommendation
+    carousel's unrelated prices, per-100g unit-price mentions, etc. — 12+
+    noisy MRP candidates for one listing, which pushed a real MRP finding
+    into a false POTENTIAL_NON_COMPLIANCE via ctx.best() picking one of the
+    unrelated numbers. The literal "mrp"/"m.r.p" keyword is now required."""
+    assert not _values_for("(₹193/100g)", F.MRP)
+    assert not _values_for("349 | ₹314 | Buy at ₹239 | Apply offers", F.MRP)
+    # Still matches real MRP declarations.
+    assert _values_for("MRP: Rs. 60.00", F.MRP)
+    assert _values_for("M.R.P ₹120", F.MRP)

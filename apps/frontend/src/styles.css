@@ -221,5 +221,10 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 .tag-list { display: flex; gap: 6px; flex-wrap: wrap; }
 .tag { background: #eef0f2; border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--color-text-muted); }
 
-.image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
-.image-grid .image-tile { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 6px; font-size: 10.5px; text-align: center; background: #fafbfc; }
+/* 90px was sized for the old text-only placeholder tiles; evidence photos
+   with an OCR bounding-box overlay (Demo Hardening: "display actual
+   evidence images" / "display OCR regions") need to render large enough
+   that a printed declaration and its highlighted region are actually
+   legible, not just present. */
+.image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.image-grid .image-tile { border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 11px; text-align: left; background: #fafbfc; }

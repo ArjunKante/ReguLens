@@ -10,9 +10,10 @@ import {
 import AnimatedList from "../components/AnimatedList";
 import { ConfidenceBar } from "../components/ConfidenceBar";
 import { DisclaimerBanner } from "../components/DisclaimerBanner";
+import { EvidenceImage } from "../components/EvidenceImage";
 import { StatusBadge } from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import type { ComplianceCheck, InspectionDetail } from "../types";
+import type { ComplianceCheck, Declaration, EvidenceItem, InspectionDetail } from "../types";
 import { ReviewPanel } from "../components/ReviewPanel";
 
 const PIPELINE_STAGE_LABELS: Record<string, string> = {
@@ -29,6 +30,23 @@ const PIPELINE_STAGE_LABELS: Record<string, string> = {
   REPORT: "Finalizing results",
 };
 
+/** Given one finding's evidence entry, resolves which image (and, if
+ * traceable to a specific OCR block, which region of it) that evidence
+ * came from — the link a click uses to jump straight to the source photo
+ * with the exact region highlighted (Demo Hardening: "make rule -> evidence
+ * -> finding traceability obvious"). Returns null for evidence that isn't
+ * image-sourced at all (e.g. WEBPAGE_TEXT/MANUAL). */
+function resolveEvidenceTarget(
+  ev: EvidenceItem,
+  declarations: Declaration[]
+): { imageId: string; ocrResultId: string | null } | null {
+  const refImageId = typeof ev.reference?.product_image_id === "string" ? (ev.reference.product_image_id as string) : null;
+  const decl = ev.declaration_id ? declarations.find((d) => d.id === ev.declaration_id) : undefined;
+  const imageId = refImageId ?? decl?.source_product_image_id ?? null;
+  if (!imageId) return null;
+  return { imageId, ocrResultId: decl?.source_ocr_result_id ?? null };
+}
+
 export function InspectionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -37,6 +55,7 @@ export function InspectionDetailPage() {
   const [files, setFiles] = useState<FileList | null>(null);
   const [uploading, setUploading] = useState(false);
   const [reportLink, setReportLink] = useState<string | null>(null);
+  const [highlight, setHighlight] = useState<{ imageId: string; ocrResultId: string | null } | null>(null);
   const pollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -66,11 +85,19 @@ export function InspectionDetailPage() {
   if (error) return <p className="error-text">{error}</p>;
   if (!inspection) return <p className="loading-text">Loading inspection…</p>;
 
-  // True both for the original case (an automatic fetch attempt failed) and
-  // for a manual-scan inspection (no listing URL was ever provided, so
-  // there was never a fetch to attempt) — either way the officer needs the
-  // upload-screenshots card below.
-  const fetchFailed = !inspection.source_url || inspection.web_pages.some((wp) => wp.fetch_status !== "SUCCESS");
+  // True for three cases: (1) an automatic fetch attempt failed outright,
+  // (2) a manual-scan inspection never had a listing URL to fetch, or (3)
+  // the fetch technically succeeded (HTTP 200) but extracted nothing usable
+  // at all — a real failure mode a live-listing test surfaced (e.g. a
+  // quick-commerce listing that requires a delivery location LM-SCAN's
+  // fetcher never provides, silently returning its generic homepage
+  // instead of the product page). All three need the same upload-fallback
+  // card; case 3 is distinguished from a genuinely empty/UNABLE_TO_VERIFY
+  // COMPLETED inspection by checking for zero declarations specifically.
+  const hollowSuccess =
+    inspection.status === "COMPLETED" && !!inspection.source_url && inspection.declarations.length === 0;
+  const fetchFailed =
+    !inspection.source_url || inspection.web_pages.some((wp) => wp.fetch_status !== "SUCCESS") || hollowSuccess;
   const canAct = user?.role === "ADMIN" || user?.role === "INSPECTOR";
   const canReview = user?.role === "ADMIN" || user?.role === "REVIEWER";
 
@@ -99,23 +126,56 @@ export function InspectionDetailPage() {
     setReportLink(objectUrl);
   }
 
+  function handleTraceEvidence(ev: EvidenceItem) {
+    const target = inspection && resolveEvidenceTarget(ev, inspection.declarations);
+    if (!target) return;
+    setHighlight(target);
+    document.getElementById(`evidence-image-${target.imageId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   const groupedChecks: Record<string, ComplianceCheck[]> = {};
   for (const check of inspection.compliance_checks) {
     (groupedChecks[check.status] ??= []).push(check);
   }
   const statusOrder = ["POTENTIAL_NON_COMPLIANCE", "NEEDS_MANUAL_REVIEW", "UNABLE_TO_VERIFY", "PASS", "NOT_APPLICABLE"];
+  const sortedDeclarations = [...inspection.declarations].sort((a, b) => a.field_name.localeCompare(b.field_name));
 
   return (
     <div>
-      <h1>{inspection.inspection_number}</h1>
+      <h1>
+        {inspection.inspection_number}
+        {inspection.is_demo && (
+          <span
+            title="Reproducible fixture data, not a live scan — see the Demo Inspection notes below."
+            style={{
+              marginLeft: 10, fontSize: 11, fontWeight: 700, letterSpacing: 0.5, padding: "3px 8px",
+              borderRadius: 999, background: "#7c3aed", color: "#fff", verticalAlign: "middle",
+            }}
+          >
+            DEMO
+          </span>
+        )}
+      </h1>
       <p className="page-subtitle">
         {inspection.product_title ?? inspection.source_url ?? "Manual inspection — no listing URL"} · Platform:{" "}
         {inspection.platform ?? "unknown"}
       </p>
+      {inspection.is_demo && (
+        <p style={{ fontSize: 12.5, color: "#7c3aed", marginTop: -8, marginBottom: 12 }}>
+          Demo Inspection — sourced from a bundled, reproducible fixture (a real listing capture) instead of a
+          live fetch, so this exact result is guaranteed regardless of network conditions. Not a finding about a
+          real, currently-live listing.
+        </p>
+      )}
 
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <StatusBadge status={inspection.status} />
         <StatusBadge status={inspection.overall_status} />
+        {inspection.pipeline_duration_ms != null && (
+          <span style={{ fontSize: 12.5, color: "var(--color-text-muted)" }}>
+            Analysis completed in {(inspection.pipeline_duration_ms / 1000).toFixed(1)}s
+          </span>
+        )}
         {inspection.source_url && (
           <a href={inspection.source_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>
             View original listing ↗
@@ -148,7 +208,9 @@ export function InspectionDetailPage() {
           <p style={{ fontSize: 13 }}>
             {inspection.source_url
               ? inspection.web_pages.find((wp) => wp.fetch_status !== "SUCCESS")?.error_message ??
-                "The page could not be automatically retrieved."
+                (hollowSuccess
+                  ? "The page was fetched, but no usable product data could be extracted from it (the listing may require a delivery location or client-side rendering this fetcher couldn't complete)."
+                  : "The page could not be automatically retrieved.")
               : "No listing URL was provided for this inspection."}{" "}
             Upload or take photos of the product listing/label to continue this inspection.
           </p>
@@ -170,6 +232,10 @@ export function InspectionDetailPage() {
           <DisclaimerBanner />
 
           <h2>Legal Metrology Findings</h2>
+          <p style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: -6 }}>
+            Each finding cites the rule it checks, the reasoning, and the underlying evidence — click an evidence
+            line to jump to the exact photo (and OCR region, when traceable to one) it came from.
+          </p>
           {statusOrder.map((status) => {
             const checks = groupedChecks[status] ?? [];
             if (checks.length === 0) return null;
@@ -205,15 +271,34 @@ export function InspectionDetailPage() {
                       <p style={{ fontSize: 13 }}>{check.reason}</p>
 
                       {check.evidence.length > 0 && (
-                        <details>
+                        <details open={check.status === "POTENTIAL_NON_COMPLIANCE"}>
                           <summary style={{ cursor: "pointer", fontSize: 12.5 }}>
                             View evidence ({check.evidence.length})
                           </summary>
-                          {check.evidence.map((ev) => (
-                            <div key={ev.id} className="evidence-item">
-                              [{ev.evidence_type}] {ev.description}
-                            </div>
-                          ))}
+                          {check.evidence.map((ev) => {
+                            const target = resolveEvidenceTarget(ev, inspection.declarations);
+                            return (
+                              <div key={ev.id} className="evidence-item">
+                                {target ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTraceEvidence(ev)}
+                                    style={{
+                                      background: "none", border: "none", padding: 0, cursor: "pointer",
+                                      color: "var(--color-primary)", textDecoration: "underline", fontSize: 12.5,
+                                      textAlign: "left",
+                                    }}
+                                  >
+                                    [{ev.evidence_type}] {ev.description} — view source photo ↓
+                                  </button>
+                                ) : (
+                                  <span>
+                                    [{ev.evidence_type}] {ev.description}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </details>
                       )}
 
@@ -239,29 +324,68 @@ export function InspectionDetailPage() {
           <div className="card" style={{ padding: 0 }}>
             <table>
               <thead>
-                <tr><th>Field</th><th>Value</th><th>Source</th><th>Confidence</th></tr>
+                <tr><th>Field</th><th>Value</th><th>Normalized</th><th>Source</th><th>Confidence</th></tr>
               </thead>
               <tbody>
-                {inspection.declarations.map((d) => (
+                {sortedDeclarations.map((d) => (
                   <tr key={d.id}>
                     <td>{d.field_name}</td>
                     <td>{d.value}</td>
-                    <td><span className="tag">{d.source_type}</span></td>
+                    <td style={{ color: "var(--color-text-muted)" }}>{d.normalized_value ?? "—"}</td>
+                    <td>
+                      {d.source_product_image_id ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHighlight({ imageId: d.source_product_image_id!, ocrResultId: d.source_ocr_result_id });
+                            document
+                              .getElementById(`evidence-image-${d.source_product_image_id}`)
+                              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }}
+                          style={{
+                            background: "none", border: "none", padding: 0, cursor: "pointer",
+                            color: "var(--color-primary)", textDecoration: "underline",
+                          }}
+                        >
+                          <span className="tag">{d.source_type}</span>
+                        </button>
+                      ) : (
+                        <span className="tag">{d.source_type}</span>
+                      )}
+                    </td>
                     <td><ConfidenceBar confidence={d.confidence} /></td>
                   </tr>
                 ))}
-                {inspection.declarations.length === 0 && <tr><td colSpan={4}>No declarations extracted.</td></tr>}
+                {inspection.declarations.length === 0 && <tr><td colSpan={5}>No declarations extracted.</td></tr>}
               </tbody>
             </table>
           </div>
 
           <h2>Product Images</h2>
+          <p style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: -6 }}>
+            Blue outlines mark every text region OCR detected; click an evidence or declaration source link above to
+            highlight the exact region it came from.
+          </p>
           <div className="image-grid">
             {inspection.images.map((img) => (
-              <div key={img.id} className="image-tile">
-                <div>{img.source_type}</div>
-                <div>{img.width}×{img.height}</div>
-                {img.quality_acceptable === false && <div style={{ color: "var(--status-review)" }}>Low quality</div>}
+              <div key={img.id} id={`evidence-image-${img.id}`} className="image-tile" style={{ padding: 0, overflow: "hidden" }}>
+                <div
+                  style={
+                    highlight?.imageId === img.id
+                      ? { outline: "3px solid #e6a700", outlineOffset: -3 }
+                      : undefined
+                  }
+                >
+                  <EvidenceImage
+                    inspectionId={inspection.id}
+                    image={img}
+                    highlightOcrResultId={highlight?.imageId === img.id ? highlight.ocrResultId : null}
+                  />
+                </div>
+                <div style={{ padding: "6px 8px", fontSize: 12 }}>
+                  <div>{img.source_type} · {img.width}×{img.height}</div>
+                  {img.quality_acceptable === false && <div style={{ color: "var(--status-review)" }}>Low quality{img.quality_notes ? `: ${img.quality_notes}` : ""}</div>}
+                </div>
               </div>
             ))}
             {inspection.images.length === 0 && <p style={{ fontSize: 13 }}>No images available.</p>}

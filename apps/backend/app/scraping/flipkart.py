@@ -38,7 +38,17 @@ logger = logging.getLogger(__name__)
 # churn often); the generic JSON-LD/OpenGraph/fallback-text strategies and
 # the label:value table extraction below are the resilient part of this
 # adapter, not these.
-TITLE_SELECTORS: list[str] = ["span.VU-ZEz", "span.B_NuCI", "h1 span"]
+#
+# `span.VU-ZEz`/`span.B_NuCI`/`h1 span` (the original selectors here) no
+# longer match anything on a live page as of this session's live-listing
+# testing (Demo Hardening) — Flipkart's title is now a bare `<h1>` with only
+# hashed classes and no child `<span>` at all, e.g.
+# `<h1 class="v1zwn21n ...">Lay's Stax Original Potato Crisps Chips Can Pack
+# Chips (163 g)</h1>`. Rather than chase specific hashed class names (which
+# the module docstring already predicts will churn again), `h1` is kept as a
+# broad last-resort match — same tradeoff the Amazon/Blinkit adapters make
+# already (Section 27: broad match beats a brittle exact one).
+TITLE_SELECTORS: list[str] = ["span.VU-ZEz", "span.B_NuCI", "h1 span", "h1"]
 
 
 class FlipkartScraper(GenericProductPageScraper):
@@ -64,8 +74,15 @@ class FlipkartScraper(GenericProductPageScraper):
                     raw_snippet=title,
                 )
             )
-            if not product.title:
-                product.title = title
+            # Always wins over the parent class's generic og:title/<title>
+            # fallback, not just when that came up empty (see amazon.py's
+            # identical fix for the full rationale — same bug, same root
+            # cause). Live-verified: Flipkart's `og:title` (and `<title>`)
+            # both carry its full SEO boilerplate ("... Price in India - Buy
+            # ... online at Flipkart.com"), so `product_title` displayed that
+            # entire sentence instead of the clean name this selector
+            # already had.
+            product.title = title
 
         # No CSS-selector MRP guess here — see the module docstring for why
         # that was deliberately not attempted. MRP comes only from the

@@ -42,17 +42,40 @@ _KEYWORD_PATTERNS: list[tuple[str, re.Pattern, float]] = [
         # e.g. a real Lay's packet reads "Mfg. & Mktg. by: PEPSICO INDIA
         # HOLDINGS PVT. LTD.", which the previous pattern never matched at
         # all (P0 audit fix: "manufacturer/packer/importer validation logic").
-        _p(r"(?:manufactured\s*by|manufacturer|mfd\.?\s*by|mfg\.?\s*(?:(?:&|and)\s*mkt(?:d|g)?\.?\s*)?by)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        # The "by" here doubles as the separator, so it stays optional after
+        # it — unlike the bare-noun form below, "by" already scopes the match.
+        _p(r"(?:manufactured\s*by|mfd\.?\s*by|mfg\.?\s*(?:(?:&|and)\s*mkt(?:d|g)?\.?\s*)?by)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        0.75,
+    ),
+    (
+        # Bare "manufacturer"/"packer"/"importer" (no "by") REQUIRES an
+        # explicit colon/dash separator, unlike the "by"-anchored forms
+        # above. A live-listing test (Demo Hardening) found this matching
+        # Flipkart's "Manufacturer info" details-panel section label (a UI
+        # toggle, not a name:value declaration) as manufacturer_name="info"
+        # when the separator was optional here too.
+        F.MANUFACTURER_NAME,
+        _p(r"manufacturer\s*[:\-]\s*(?P<val>[^|\n\r,]{3,120})"),
         0.75,
     ),
     (
         F.PACKER_NAME,
-        _p(r"(?:packed\s*by|packer|pkd\.?\s*by)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        _p(r"(?:packed\s*by|pkd\.?\s*by)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        0.75,
+    ),
+    (
+        F.PACKER_NAME,
+        _p(r"packer\s*[:\-]\s*(?P<val>[^|\n\r,]{3,120})"),
         0.75,
     ),
     (
         F.IMPORTER_NAME,
-        _p(r"(?:imported\s*by|importer)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        _p(r"imported\s*by\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        0.75,
+    ),
+    (
+        F.IMPORTER_NAME,
+        _p(r"importer\s*[:\-]\s*(?P<val>[^|\n\r,]{3,120})"),
         0.75,
     ),
     (
@@ -82,7 +105,17 @@ _KEYWORD_PATTERNS: list[tuple[str, re.Pattern, float]] = [
     ),
     (
         F.MRP,
-        _p(r"(?:mrp|₹)\s*[:\-]?\s*(?P<val>[\d,]+(?:\.\d{1,2})?)"),
+        # No bare "₹" trigger — a live-listing test (Demo Hardening) found
+        # this matching every rupee amount anywhere on the page (a "similar
+        # products" recommendation carousel's unrelated prices, per-100g
+        # unit-price mentions, etc.), producing a dozen+ noisy MRP
+        # candidates for one listing and pushing a real, correctly-declared
+        # MRP into a false POTENTIAL_NON_COMPLIANCE via ctx.best() picking
+        # an unrelated bare number over it. Requiring the literal "mrp"/
+        # "m.r.p" keyword text (same anchoring discipline every other
+        # fallback pattern here already uses) is what actually scopes this
+        # to the product's own MRP declaration.
+        _p(r"(?:mrp|m\.r\.p\.?)\s*[:\-]?\s*[₹]?\s*(?P<val>[\d,]+(?:\.\d{1,2})?)"),
         0.7,
     ),
     (

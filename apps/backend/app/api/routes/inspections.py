@@ -4,15 +4,18 @@ import datetime as dt
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
 from app.auth.dependencies import require_any_authenticated, require_inspector, require_reviewer
 from app.core.database import get_db
+from app.demo_fixtures import DEMO_SOURCE_URL
 from app.models.compliance import ComplianceCheck
 from app.models.enums import ComplianceStatus, EvidenceSourceType, InspectionStatus
 from app.models.inspection import Inspection
 from app.models.review import ReviewDecision
+from app.models.scraping import ProductImage
 from app.models.user import User
 from app.nlp.declaration_extractor import add_manual_declaration
 from app.repositories.inspection_repository import create_inspection, get_inspection, list_inspections
@@ -52,6 +55,7 @@ def _to_summary(inspection: Inspection) -> InspectionSummary:
         product_title=inspection.product.title if inspection.product else None,
         created_at=inspection.created_at,
         completed_at=inspection.completed_at,
+        is_demo=inspection.is_demo,
     )
 
 
@@ -94,6 +98,13 @@ def _to_check_out(check: ComplianceCheck) -> ComplianceCheckOut:
 
 def _to_detail(inspection: Inspection) -> InspectionDetail:
     summary = _to_summary(inspection)
+    # The DONE-stage event recorded at the end of a successful pipeline run
+    # carries the total wall-clock duration (Demo Hardening: "measure
+    # pipeline execution time") — surfaced here rather than adding a column,
+    # since it's already just another PipelineEvent. Older inspections that
+    # completed before this existed simply have no such event, hence None.
+    done_events = [p for p in inspection.pipeline_events if p.stage == "DONE" and p.duration_ms is not None]
+    pipeline_duration_ms = done_events[-1].duration_ms if done_events else None
     return InspectionDetail(
         **summary.model_dump(),
         notes=inspection.notes,
@@ -102,6 +113,7 @@ def _to_detail(inspection: Inspection) -> InspectionDetail:
         images=[ProductImageOut.model_validate(i) for i in inspection.images],
         web_pages=[WebPageOut.model_validate(w) for w in inspection.web_pages],
         pipeline_events=[PipelineEventOut.model_validate(p) for p in inspection.pipeline_events],
+        pipeline_duration_ms=pipeline_duration_ms,
     )
 
 
@@ -113,6 +125,29 @@ def create_new_inspection(
 ) -> InspectionSummary:
     inspection = create_inspection(db, officer=officer, source_url=payload.source_url, notes=payload.notes)
     log_action(db, actor_id=officer.id, action="INSPECTION_CREATED", entity_type="inspection", entity_id=str(inspection.id))
+    return _to_summary(inspection)
+
+
+@router.post("/demo", response_model=InspectionSummary, status_code=status.HTTP_201_CREATED)
+def create_demo_inspection(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    officer: User = Depends(require_inspector),
+) -> InspectionSummary:
+    """Demo Inspection mode (Demo Hardening): a controlled, reproducible
+    inspection sourced from a bundled real-listing fixture instead of a
+    live fetch, for demos where live scraping's inherent flakiness isn't
+    acceptable. Runs the exact same pipeline/compliance engine as a real
+    scan — only the evidence source differs — and the result is marked
+    `is_demo=True` everywhere so it is never mistaken for a real finding."""
+    inspection = create_inspection(
+        db, officer=officer, source_url=DEMO_SOURCE_URL, notes="Demo Inspection — reproducible fixture data, not a live scan.",
+        is_demo=True,
+    )
+    inspection.status = InspectionStatus.IN_PROGRESS.value
+    db.commit()
+    background_tasks.add_task(run_inspection_pipeline_new_session, inspection.id)
+    log_action(db, actor_id=officer.id, action="DEMO_INSPECTION_STARTED", entity_type="inspection", entity_id=str(inspection.id))
     return _to_summary(inspection)
 
 
@@ -198,6 +233,36 @@ async def upload_screenshots(
         entity_id=str(inspection.id), extra={"count": len(created)},
     )
     return created
+
+
+_IMAGE_CONTENT_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+
+@router.get("/{inspection_id}/images/{image_id}/file")
+def download_evidence_image(
+    inspection_id: uuid.UUID, image_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(require_any_authenticated)
+) -> Response:
+    """Serves the raw bytes of one evidence image (Demo Hardening: "display
+    actual evidence images" — images were stored and quality-assessed but
+    never actually servable before this). Requires auth like every other
+    read here; the frontend fetches this the same way it already fetches
+    report downloads (through the authenticated API client, converted to a
+    local object URL) rather than a plain <img src>, since a plain <img>
+    tag can't carry an Authorization header."""
+    image = db.get(ProductImage, image_id)
+    if image is None or image.inspection_id != inspection_id:
+        raise HTTPException(status_code=404, detail="Image not found on this inspection.")
+    from pathlib import Path
+
+    from app.storage.files import read_bytes
+
+    try:
+        content = read_bytes(image.storage_path)
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="Stored image file could not be read.") from exc
+    ext = Path(image.storage_path).suffix.lower()
+    media_type = _IMAGE_CONTENT_TYPES.get(ext, image.content_type or "application/octet-stream")
+    return Response(content=content, media_type=media_type)
 
 
 @router.post("/{inspection_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
