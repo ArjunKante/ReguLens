@@ -15,6 +15,7 @@ going stale degrades to "slightly lower confidence", not "zero data".
 from __future__ import annotations
 
 import re
+import urllib.parse
 from abc import ABC, abstractmethod
 
 from bs4 import BeautifulSoup
@@ -32,6 +33,27 @@ from app.scraping.extractors import (
 from app.scraping.fetcher import PageFetcher, PlaywrightPageFetcher
 
 _PRICE_PATTERN = re.compile(r"[\d,]+(?:\.\d{1,2})?")
+
+
+def hostname_matches(url: str, *registrable_domains: str) -> bool:
+    """True if `url`'s hostname IS one of `registrable_domains`, or a proper
+    subdomain of one (e.g. `www.blinkit.com`, `blackberry.blinkit.com`).
+
+    Platform adapters previously matched with a plain substring test
+    (`"blinkit.com" in url.lower()`), which a URL like
+    `https://evil.example/?next=blinkit.com` or
+    `https://blinkit.com.attacker.net/...` also satisfies — the first
+    routes an attacker-controlled page through the Blinkit-specific
+    selectors (low impact, just wrong extraction), but both patterns are
+    exactly the kind of hostname check that must never be done by substring
+    (Section 4/26 audit fix: "proper marketplace hostname validation")."""
+    hostname = (urllib.parse.urlsplit(url).hostname or "").lower()
+    if not hostname:
+        return False
+    return any(
+        hostname == domain or hostname.endswith(f".{domain}")
+        for domain in (d.lower() for d in registrable_domains)
+    )
 
 
 def _to_float(value: object) -> float | None:

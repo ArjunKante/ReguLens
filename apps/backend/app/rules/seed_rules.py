@@ -97,7 +97,7 @@ SEED_RULES: list[SeedRule] = [
             "imported products shall be mentioned on the package."
         ),
         "applicability": "Only when the product is identified as imported (importer declared).",
-        "exceptions": "Not applicable to domestically manufactured products.",
+        "exceptions": "Not applicable to domestically manufactured products under Rule 6(1)(aa) itself.",
         "validation_type": "CROSS_FIELD_CHECK",
         "severity": "MAJOR",
         "validator_config": {"handler": "country_of_origin_gate"},
@@ -105,7 +105,18 @@ SEED_RULES: list[SeedRule] = [
         "source_locator": "Rule 6(1)(aa)",
         "effective_from": "2018-01-01",
         "effective_until": None,
-        "notes": "Substituted by G.S.R. 629(E) dated 23 June 2017, in force 1.1.2018.",
+        "notes": (
+            "Substituted by G.S.R. 629(E) dated 23 June 2017, in force 1.1.2018. Rule "
+            "6(1)(aa) itself is imported-products-only; separately, for an *online listing* "
+            "specifically, government e-commerce policy (DPIIT's June 2020 direction to "
+            "e-commerce entities) has since required country-of-origin display for "
+            "domestically-sourced listings too, and this remains standard marketplace "
+            "practice as of 2026 — the validator therefore also checks for a declared "
+            "country of origin on domestic-product online listings, but reports its absence "
+            "there as NEEDS_MANUAL_REVIEW (an e-commerce-policy observation), never as a "
+            "POTENTIAL_NON_COMPLIANCE finding against Rule 6(1)(aa) itself, which does not "
+            "require it for a domestic product."
+        ),
     },
     {
         "rule_key": "LMPC-R6-1B-GENERIC-NAME",

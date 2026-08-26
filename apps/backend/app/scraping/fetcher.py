@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.models.enums import WebFetchStatus
 from app.scraping.data import FetchResult
 from app.scraping.robots import enforce_rate_limit, is_allowed
+from app.scraping.url_safety import UnsafeURLError, ensure_safe_to_fetch
 
 settings = get_settings()
 
@@ -31,6 +32,17 @@ class PlaywrightPageFetcher:
     (Section 3/4)."""
 
     def fetch(self, url: str) -> FetchResult:
+        try:
+            ensure_safe_to_fetch(url)
+        except UnsafeURLError as exc:
+            return FetchResult(
+                status=WebFetchStatus.FAILED.value,
+                url=url,
+                error_message=f"Refusing to fetch this URL: {exc}",
+                robots_txt_allowed=None,
+                scraper_version=SCRAPER_VERSION,
+            )
+
         allowed = is_allowed(url)
         if allowed is None:
             return FetchResult(
@@ -74,6 +86,24 @@ class PlaywrightPageFetcher:
                         wait_until="domcontentloaded",
                     )
                     page.wait_for_timeout(1500)  # let client-rendered content settle
+
+                    # Playwright follows redirects itself with no per-hop
+                    # validation hook exposed here, so a URL that passed
+                    # ensure_safe_to_fetch() above could still have been
+                    # redirected to an internal address by the server. Check
+                    # where navigation actually ended up before trusting the
+                    # content it returned.
+                    try:
+                        ensure_safe_to_fetch(page.url)
+                    except UnsafeURLError as exc:
+                        return FetchResult(
+                            status=WebFetchStatus.FAILED.value,
+                            url=page.url,
+                            error_message=f"Refusing to use fetched content: navigation redirected to an unsafe URL ({exc}).",
+                            robots_txt_allowed=True,
+                            scraper_version=SCRAPER_VERSION,
+                        )
+
                     html = page.content()
                     status_code = response.status if response else None
 

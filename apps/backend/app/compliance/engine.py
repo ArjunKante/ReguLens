@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.compliance.consistency import evaluate_consistency
-from app.compliance.context import InspectionContext
+from app.compliance.context import InspectionContext, OriginStatus
 from app.compliance.outcome import ValidationOutcome
 from app.models.compliance import ComplianceCheck, Evidence, Violation
 from app.models.declaration import Declaration
@@ -64,11 +64,33 @@ def _build_context(db: Session, inspection: Inspection) -> InspectionContext:
         images=images,
         ocr_results=ocr_results,
         is_tobacco_product=is_tobacco_product(*text_blob_parts),
-        is_imported=any(
-            d.field_name == F.IMPORTER_NAME and (d.value or "").strip() for d in declarations
-        ),
+        origin_status=_classify_origin(declarations, has_sufficient_evidence=bool(web_pages) or bool(images)),
     )
     return ctx
+
+
+def _classify_origin(declarations: list[Declaration], *, has_sufficient_evidence: bool) -> OriginStatus:
+    """IMPORTED / DOMESTIC / UNKNOWN (P0 audit fix — see context.py's
+    OriginStatus docstring for why this needs three states, not a bool).
+
+    IMPORTED: an importer_name declaration was found — Rule 6(1)(a)'s
+    explanation treats a declared importer as the signal that a package is
+    an imported product.
+    DOMESTIC: no importer was declared, evidence was actually retrieved
+    (so absence is meaningful), AND a manufacturer/packer was positively
+    found — i.e. we have real evidence this is a normal domestically-sourced
+    listing, not just an absence of any evidence at all.
+    UNKNOWN: nothing above matched — most commonly, no evidence was
+    retrieved at all (failed fetch, no images), so absence of an importer
+    declaration cannot be read as "domestic".
+    """
+    if any(d.field_name == F.IMPORTER_NAME and (d.value or "").strip() for d in declarations):
+        return "IMPORTED"
+    if has_sufficient_evidence and any(
+        d.field_name in (F.MANUFACTURER_NAME, F.PACKER_NAME) and (d.value or "").strip() for d in declarations
+    ):
+        return "DOMESTIC"
+    return "UNKNOWN"
 
 
 def _active_rule_versions(db: Session) -> list[RuleVersion]:

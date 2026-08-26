@@ -13,6 +13,7 @@ from app.models.compliance import ComplianceCheck
 from app.models.declaration import Declaration
 from app.models.enums import InspectionStatus, PipelineStage
 from app.models.inspection import Inspection, PipelineEvent
+from app.models.scraping import WebPage
 from app.models.user import User
 from app.rules.loader import load_rules
 from app.scraping.blinkit import BlinkitScraper
@@ -104,6 +105,54 @@ def test_pipeline_handles_manual_scan_with_no_source_url(db: Session, inspector_
         .all()
     )
     assert any("no listing url" in (e.message or "").lower() for e in fetch_events)
+
+
+def test_reanalysis_does_not_duplicate_declarations_or_compliance_checks(
+    db: Session, inspector_user: User, loaded_rules, monkeypatch
+):
+    """P0 audit fix: "re-analysis duplication" — re-running the pipeline for
+    the same inspection (e.g. POST .../analyze after uploading another
+    screenshot) must recompute declarations/compliance findings/auto-fetched
+    evidence from scratch, not append a second copy of each alongside the
+    first run's."""
+    html = (FIXTURES / "success_listing.html").read_text(encoding="utf-8")
+    url = "https://blinkit.com/prn/tasty-munch/prid/12345"
+
+    monkeypatch.setattr(
+        "app.services.scraping_service.get_scraper_for_url",
+        lambda u: BlinkitScraper(fetcher=StaticHTMLFetcher(html=html, url=u)),
+    )
+    monkeypatch.setattr(pipeline_module, "download_image", lambda url: None)
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url=url,
+        platform=None,
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+    db.refresh(inspection)
+    first_declaration_count = db.query(Declaration).filter(Declaration.inspection_id == inspection.id).count()
+    first_check_count = db.query(ComplianceCheck).filter(ComplianceCheck.inspection_id == inspection.id).count()
+    first_webpage_count = db.query(WebPage).filter(WebPage.inspection_id == inspection.id).count()
+    assert first_declaration_count > 0
+    assert first_check_count > 0
+
+    # Re-run exactly as .../analyze would (same inspection, same evidence source).
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+    db.refresh(inspection)
+    second_declaration_count = db.query(Declaration).filter(Declaration.inspection_id == inspection.id).count()
+    second_check_count = db.query(ComplianceCheck).filter(ComplianceCheck.inspection_id == inspection.id).count()
+    second_webpage_count = db.query(WebPage).filter(WebPage.inspection_id == inspection.id).count()
+
+    assert second_declaration_count == first_declaration_count
+    assert second_check_count == first_check_count
+    assert second_webpage_count == first_webpage_count == 1
+    assert inspection.status == InspectionStatus.COMPLETED.value
 
 
 def test_pipeline_handles_fetch_failure_gracefully(db: Session, inspector_user: User, loaded_rules, monkeypatch):

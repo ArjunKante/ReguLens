@@ -24,9 +24,18 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.compliance.engine import compute_overall_status, run_compliance_checks
 from app.core.config import get_settings
-from app.models.enums import EvidenceSourceType, InspectionStatus, PipelineStage, PipelineStageStatus, WebFetchStatus
+from app.models.compliance import ComplianceCheck, Evidence, Violation
+from app.models.declaration import Declaration
+from app.models.enums import (
+    DeclarationSourceType,
+    EvidenceSourceType,
+    InspectionStatus,
+    PipelineStage,
+    PipelineStageStatus,
+    WebFetchStatus,
+)
 from app.models.inspection import Inspection, PipelineEvent
-from app.models.scraping import OCRResult, ProductImage, WebPage
+from app.models.scraping import OCRResult, ProductImage, WebExtraction, WebPage
 from app.nlp.declaration_extractor import extract_declarations_from_ocr, extract_declarations_from_webpage
 from app.repositories.product_repository import get_or_create_product, touch_last_checked
 from app.services.classification_service import classify_product
@@ -107,6 +116,65 @@ def run_inspection_pipeline_new_session(inspection_id) -> None:  # noqa: ANN001
         db.close()
 
 
+def _reset_derived_data_for_reanalysis(db: Session, inspection: Inspection) -> None:
+    """Clears every row this pipeline itself re-derives on each run, so
+    re-running analysis (POST .../analyze — e.g. after uploading another
+    screenshot, or simply re-checking a listing) recomputes findings from
+    the current full evidence set instead of silently appending a second
+    copy of every declaration, compliance finding, and auto-fetched
+    image/page alongside the first run's (P0 audit fix: "re-analysis
+    duplication" — previously every one of those tables only ever grew,
+    never got superseded, so a second analyze() call doubled the "Legal
+    Metrology Findings" and "Extracted Declarations" sections, doubled
+    stored images, and re-ran OCR on the resulting duplicate images).
+
+    What is NOT cleared: officer-uploaded screenshots (ProductImage rows
+    with source_type USER_INPUT) and manually-typed declarations
+    (Declaration rows with source_type USER_INPUT) — those are evidence the
+    officer supplied directly, never automatically re-derived, so a re-run
+    must never lose them. OCRResult rows belonging to a preserved image are
+    kept too (re-running OCR on an unchanged image can't change the
+    result — `_run_ocr_parallel` already skips images that already have
+    OCRResult rows); their declarations are still recomputed fresh below,
+    since DECLARATION_EXTRACTION re-derives declarations from whatever
+    OCRResult/WebExtraction rows exist at the time it runs.
+    """
+    check_ids = [
+        row[0] for row in db.query(ComplianceCheck.id).filter(ComplianceCheck.inspection_id == inspection.id)
+    ]
+    if check_ids:
+        db.query(Evidence).filter(Evidence.compliance_check_id.in_(check_ids)).delete(synchronize_session=False)
+        db.query(Violation).filter(Violation.compliance_check_id.in_(check_ids)).delete(synchronize_session=False)
+        db.query(ComplianceCheck).filter(ComplianceCheck.id.in_(check_ids)).delete(synchronize_session=False)
+
+    db.query(Declaration).filter(
+        Declaration.inspection_id == inspection.id,
+        Declaration.source_type != DeclarationSourceType.USER_INPUT.value,
+    ).delete(synchronize_session=False)
+
+    web_page_ids = [row[0] for row in db.query(WebPage.id).filter(WebPage.inspection_id == inspection.id)]
+    if web_page_ids:
+        db.query(WebExtraction).filter(WebExtraction.web_page_id.in_(web_page_ids)).delete(synchronize_session=False)
+        db.query(WebPage).filter(WebPage.id.in_(web_page_ids)).delete(synchronize_session=False)
+
+    auto_image_ids = [
+        row[0]
+        for row in db.query(ProductImage.id).filter(
+            ProductImage.inspection_id == inspection.id,
+            ProductImage.source_type == EvidenceSourceType.ONLINE_LISTING.value,
+        )
+    ]
+    if auto_image_ids:
+        db.query(OCRResult).filter(OCRResult.product_image_id.in_(auto_image_ids)).delete(synchronize_session=False)
+        db.query(ProductImage).filter(ProductImage.id.in_(auto_image_ids)).delete(synchronize_session=False)
+
+    db.commit()
+    # The bulk deletes above bypassed the ORM identity map (synchronize_session=False),
+    # so anything already loaded on `inspection` (e.g. inspection.web_pages) would
+    # otherwise still show the now-deleted rows for the rest of this session.
+    db.expire_all()
+
+
 def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
     inspection = db.get(Inspection, inspection_id)
     if inspection is None:
@@ -115,6 +183,8 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
 
     inspection.status = InspectionStatus.IN_PROGRESS.value
     db.commit()
+
+    _reset_derived_data_for_reanalysis(db, inspection)
 
     scraped_product = None
 

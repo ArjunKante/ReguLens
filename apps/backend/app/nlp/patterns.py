@@ -37,12 +37,17 @@ def _p(pattern: str) -> re.Pattern:
 _KEYWORD_PATTERNS: list[tuple[str, re.Pattern, float]] = [
     (
         F.MANUFACTURER_NAME,
-        _p(r"(?:manufactured\s*by|manufacturer)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        # Real packaging almost always abbreviates ("Mfg. by:", "Mfd by:",
+        # "Mfg. & Mktg. by:") rather than spelling out "manufactured by" —
+        # e.g. a real Lay's packet reads "Mfg. & Mktg. by: PEPSICO INDIA
+        # HOLDINGS PVT. LTD.", which the previous pattern never matched at
+        # all (P0 audit fix: "manufacturer/packer/importer validation logic").
+        _p(r"(?:manufactured\s*by|manufacturer|mfd\.?\s*by|mfg\.?\s*(?:(?:&|and)\s*mkt(?:d|g)?\.?\s*)?by)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
         0.75,
     ),
     (
         F.PACKER_NAME,
-        _p(r"(?:packed\s*by|packer)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
+        _p(r"(?:packed\s*by|packer|pkd\.?\s*by)\s*[:\-]?\s*(?P<val>[^|\n\r,]{3,120})"),
         0.75,
     ),
     (
@@ -116,6 +121,29 @@ _KEYWORD_PATTERNS: list[tuple[str, re.Pattern, float]] = [
 ]
 
 
+# Rule 6(1)(a) and Rule 10 both require an *address*, not just a name, for
+# the manufacturer/packer/importer — but nothing ever produced
+# manufacturer_address/packer_address/importer_address candidates, so
+# `LMPC-R6-1A-MFR-NAME` and `LMPC-R10-NAME-ADDR-FORM` (both of which require
+# an address field) could never PASS regardless of how complete a package's
+# declaration actually was (P0 audit fix: "manufacturer/packer/importer
+# validation logic"). Real labels present name and address as one
+# contiguous line ("Mfg. by: X, P.O. Box ..., PIN - 122002, State") rather
+# than under a separate "address:" label, so there is no independent
+# keyword to anchor a standalone address pattern on — instead, the text
+# immediately following a name match is checked for an Indian 6-digit PIN
+# code (a strong, low-false-positive signal that a postal address follows)
+# and captured as that role's address.
+_ADDRESS_FIELD_FOR_NAME = {
+    F.MANUFACTURER_NAME: F.MANUFACTURER_ADDRESS,
+    F.PACKER_NAME: F.PACKER_ADDRESS,
+    F.IMPORTER_NAME: F.IMPORTER_ADDRESS,
+}
+_PIN_CODE_PATTERN = re.compile(r"\b\d{6}\b")
+_ADDRESS_WINDOW_CHARS = 220
+_ADDRESS_BASE_CONFIDENCE = 0.55
+
+
 def find_field_candidates(text: str) -> list[TextMatch]:
     """Scans free text (webpage visible text OR OCR text) for candidate
     declaration values. Returns every match — including lower-confidence
@@ -141,4 +169,21 @@ def find_field_candidates(text: str) -> list[TextMatch]:
                     base_confidence=base_confidence,
                 )
             )
+
+            address_field = _ADDRESS_FIELD_FOR_NAME.get(field_name)
+            if address_field is not None:
+                window_end = min(len(text), m.end() + _ADDRESS_WINDOW_CHARS)
+                window = text[m.end() : window_end]
+                pin_match = _PIN_CODE_PATTERN.search(window)
+                if pin_match:
+                    address_value = window[: pin_match.end()].strip().strip(",;")
+                    if address_value:
+                        matches.append(
+                            TextMatch(
+                                field_name=address_field,
+                                value=address_value,
+                                raw_snippet=text[max(0, m.start() - 20) : window_end].strip(),
+                                base_confidence=_ADDRESS_BASE_CONFIDENCE,
+                            )
+                        )
     return matches

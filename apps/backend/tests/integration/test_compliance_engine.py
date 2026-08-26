@@ -149,13 +149,55 @@ def test_best_before_not_applicable_for_household_category(db: Session, inspecto
     assert check.status == ComplianceStatus.NOT_APPLICABLE.value
 
 
-def test_country_of_origin_not_applicable_when_not_imported(db: Session, inspector_user: User, loaded_rules):
+def test_country_of_origin_needs_review_when_domestic_online_listing_omits_it(db: Session, inspector_user: User, loaded_rules):
+    """A domestic product's *online listing* (a WebPage was fetched) with no
+    declared country of origin is not a Rule 6(1)(aa) violation (that rule
+    is imported-only), but current e-commerce country-of-origin display
+    practice still expects it — so this is NEEDS_MANUAL_REVIEW, not a
+    blanket NOT_APPLICABLE (P0 audit fix: "current e-commerce
+    country-of-origin requirement"; see also
+    test_country_of_origin_not_applicable_for_domestic_physical_only_inspection
+    for the case that IS still NOT_APPLICABLE)."""
     inspection = _inspection(db, inspector_user)
     wp = _webpage(db, inspection)
     _declare(db, inspection, wp, "manufacturer_name", "Local Foods Pvt Ltd")
     checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
     check = _check_for(checks, db, "LMPC-R6-1AA-COUNTRY-ORIGIN")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_country_of_origin_not_applicable_for_domestic_physical_only_inspection(db: Session, inspector_user: User, loaded_rules):
+    """No WebPage at all (a manual/photo-only inspection, i.e. no online
+    listing exists) with a domestic manufacturer declared: Rule 6(1)(aa)
+    (imported-only) and the e-commerce display practice (online-listings-only)
+    both agree this is genuinely NOT_APPLICABLE."""
+    inspection = _inspection(db, inspector_user)
+    inspection.source_url = None
+    db.commit()
+    image = ProductImage(
+        inspection_id=inspection.id, source_type="USER_INPUT", storage_path="manual.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc),
+    )
+    db.add(image)
+    db.commit()
+    _declare(db, inspection, None, "manufacturer_name", "Local Foods Pvt Ltd", source_type=DeclarationSourceType.IMAGE_OCR)
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R6-1AA-COUNTRY-ORIGIN")
     assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_country_of_origin_unable_to_verify_when_origin_cannot_be_determined(db: Session, inspector_user: User, loaded_rules):
+    """No importer AND no manufacturer/packer declared at all: origin is
+    UNKNOWN, not "presumed domestic" (P0 audit fix: "imported/domestic/
+    unknown classification" — the previous boolean `is_imported` collapsed
+    this into the same NOT_APPLICABLE as a positively-identified domestic
+    product)."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Some Snack")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R6-1AA-COUNTRY-ORIGIN")
+    assert check.status == ComplianceStatus.UNABLE_TO_VERIFY.value
 
 
 def test_manufacturer_declaration_needs_manual_review_on_food_category_exclusion(db: Session, inspector_user: User, loaded_rules):
@@ -270,3 +312,53 @@ def test_overall_status_all_not_applicable_is_unable_to_verify():
 
     checks = [Fake(ComplianceStatus.NOT_APPLICABLE), Fake(ComplianceStatus.NOT_APPLICABLE)]
     assert compute_overall_status(checks) == ComplianceStatus.UNABLE_TO_VERIFY
+
+
+def test_ecommerce_display_rule_not_applicable_for_manual_photo_only_inspection(db: Session, inspector_user: User, loaded_rules):
+    """P0 audit fix: "online vs physical rule applicability" — Rule 6(10)'s
+    e-commerce display duty only has something to say about an actual online
+    listing. A manual/photo-only inspection (no WebPage was ever fetched)
+    must not be flagged for failing to display declarations "on the digital
+    and electronic network" it never had."""
+    inspection = _inspection(db, inspector_user)
+    inspection.source_url = None
+    db.commit()
+    image = ProductImage(
+        inspection_id=inspection.id, source_type="USER_INPUT", storage_path="manual.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc),
+    )
+    db.add(image)
+    db.commit()
+    # Even with plenty of declarations present (just not from a webpage —
+    # there is none), the rule must be NOT_APPLICABLE, not scored as if a
+    # listing omitted them.
+    _declare(db, inspection, None, "product_name", "Test Snack", source_type=DeclarationSourceType.IMAGE_OCR)
+    _declare(db, inspection, None, "mrp", "Rs. 20", source_type=DeclarationSourceType.IMAGE_OCR, normalized="20.00")
+
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R6-10-ECOMMERCE-DISPLAY")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_total_ocr_failure_does_not_become_automatic_potential_non_compliance(db: Session, inspector_user: User, loaded_rules):
+    """P0 audit fix: "failed OCR doesn't become automatic non-compliance" —
+    images were supplied but OCR produced zero OCRResult rows for all of
+    them (engine failure / blank image). The previous evidence-quality
+    scoring treated "no OCR at all" the same as a neutral 0.5 average OCR
+    confidence, which for a listing with no webpage evidence landed exactly
+    at the POTENTIAL_NON_COMPLIANCE threshold instead of NEEDS_MANUAL_REVIEW."""
+    inspection = _inspection(db, inspector_user)
+    inspection.source_url = None
+    db.commit()
+    image = ProductImage(
+        inspection_id=inspection.id, source_type="USER_INPUT", storage_path="manual.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc), quality_acceptable=True,
+    )
+    db.add(image)
+    db.commit()
+    # No OCRResult rows at all for this image -- OCR completely failed.
+
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1B-GENERIC-NAME")
+    assert check.status != ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
+    assert check.status in (ComplianceStatus.NEEDS_MANUAL_REVIEW.value, ComplianceStatus.UNABLE_TO_VERIFY.value)
