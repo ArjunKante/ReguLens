@@ -133,10 +133,55 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 .form-row { margin-bottom: 14px; }
 .form-row label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--color-text-muted); }
 
-.login-shell {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-primary-dark);
+/* Login page: hero (animated background + CTAs) -> about -> the actual
+   sign-in form, in that scroll order. See LoginPage.tsx. */
+.landing { overflow-x: hidden; }
+
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #0b1830;
 }
-.login-card { width: 360px; background: #fff; border-radius: var(--radius); padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.hero__waves { position: absolute; inset: 0; z-index: 0; }
+.hero__content {
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+  padding: 0 24px;
+  text-align: center;
+  color: #fff;
+}
+.hero__content h1 { font-size: 42px; margin: 0 0 8px 0; letter-spacing: 0.5px; }
+.hero__tagline { font-size: 15px; color: #cfe0ff; margin: 0 0 16px 0; }
+.hero__subtext { font-size: 14px; line-height: 1.6; color: #b7c6e6; margin: 0 0 32px 0; }
+.hero__actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.hero__secondary-btn {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 10px;
+  padding: 11px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.hero__secondary-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.7); }
+
+.about { background: var(--color-bg); padding: 72px 24px; }
+.about__inner { max-width: 680px; margin: 0 auto; }
+.about__inner h2 { font-size: 22px; margin: 0 0 16px 0; }
+.about__inner p { font-size: 14px; line-height: 1.7; color: var(--color-text); margin: 0 0 14px 0; }
+
+.login-shell {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-bg);
+  padding: 48px 24px;
+}
+.login-card { width: 360px; background: #fff; border-radius: var(--radius); padding: 32px; box-shadow: var(--shadow); }
 .login-card h1 { text-align: center; color: var(--color-primary); }
 .login-card p.tagline { text-align: center; color: var(--color-text-muted); font-size: 12.5px; margin-bottom: 24px; }
 .error-text { color: var(--status-violation); font-size: 12.5px; margin-top: 8px; }
