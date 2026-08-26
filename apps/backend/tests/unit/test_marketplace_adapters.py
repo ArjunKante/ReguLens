@@ -148,6 +148,41 @@ def test_amazon_css_selector_title_wins_over_generic_site_name_og_title():
     assert product.title == "Real Product Name 200g"
 
 
+def test_flipkart_div_based_spec_grid_is_extracted_when_page_has_no_table_at_all():
+    """Live-verified against a real Flipkart page this session: the
+    "Product Details" panel this adapter's docstring long described as "a
+    genuine label:value specification table" turned out to have zero
+    <table> tags at all — it's a flex-div grid, each row a
+    `.grid-formation-dynamic` wrapper whose one child div contains the
+    label/value/spacer divs. Without handling this shape, net_quantity and
+    manufacturer_name had no structured source at all on a real page,
+    leaving recall entirely dependent on the (since-tightened, less
+    permissive) generic fallback-text regexes."""
+    html = """
+    <html><body>
+      <div class="grid-formation-dynamic"><div>
+        <div>Net Quantity</div><div>500 g</div><div></div>
+      </div></div>
+      <div class="grid-formation-dynamic"><div>
+        <div>Manufactured By</div><div>Acme Foods Pvt Ltd</div><div></div>
+      </div></div>
+      <div class="grid-formation-dynamic"><div>
+        <div>Brand</div><div>Acme</div><div></div>
+      </div></div>
+    </body></html>
+    """
+    scraper = FlipkartScraper(fetcher=StaticHTMLFetcher(html=html, url="https://www.flipkart.com/x/p/itmgriddemo"))
+    fetch_result = scraper.fetch_page("https://www.flipkart.com/x/p/itmgriddemo")
+    product = scraper.extract_product_data(fetch_result.html, fetch_result.url)
+
+    def best(field_name: str) -> str | None:
+        c = product.best(field_name)
+        return c.value if c else None
+
+    assert best("net_quantity") == "500 g"
+    assert best("manufacturer_name") == "Acme Foods Pvt Ltd"
+
+
 def test_flipkart_css_selector_title_wins_over_noisy_seo_og_title():
     """Live-verified against a real Flipkart page this session: both
     og:title and <title> carry Flipkart's full SEO boilerplate ("... Price

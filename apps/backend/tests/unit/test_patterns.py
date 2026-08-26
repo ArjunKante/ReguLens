@@ -66,6 +66,23 @@ def test_manufacturer_bare_noun_without_separator_is_not_matched():
     assert _values_for("Importer: Global Traders Pvt Ltd", F.IMPORTER_NAME)
 
 
+def test_net_quantity_unanchored_number_unit_is_not_matched():
+    """Live-listing test found the old unanchored net_quantity fallback
+    (bare "\\d+\\s*(?:g|kg|ml|...)", no "net"/"quantity" keyword required)
+    matching a real Flipkart page's nutrition-facts panel ("Total Fat: 8
+    g", "Protein: 2 g") and other recommended products' weights in a
+    "similar products" carousel ("Real Spinach Chips 125 g") — 9 wrong
+    candidates against the listing's one real, correctly-labeled "163 g".
+    That unanchored pattern has been removed entirely; the keyword-anchored
+    one still matches real declarations fine."""
+    assert not _values_for("Total Fat: 8 g, Saturated Fat: 1 g, Cholesterol: 0 mg", F.NET_QUANTITY)
+    assert not _values_for("Real Spinach Chips 125 g | 21% OFF | ₹225", F.NET_QUANTITY)
+    assert not _values_for("(₹193/100g)", F.NET_QUANTITY)
+    # Still matches real, keyword-anchored declarations.
+    assert _values_for("Net Quantity: 500 g", F.NET_QUANTITY)
+    assert _values_for("Net Wt. 250g", F.NET_QUANTITY)
+
+
 def test_mrp_bare_currency_symbol_is_not_matched():
     """Live-listing test found the bare "₹" trigger matching every rupee
     amount on a real Flipkart page — a "similar products" recommendation
