@@ -53,14 +53,7 @@ a { color: var(--color-primary); }
   margin-bottom: 12px;
 }
 .sidebar__brand small { display: block; font-weight: 400; font-size: 11px; opacity: 0.7; margin-top: 4px; }
-.sidebar nav a {
-  display: block;
-  padding: 10px 20px;
-  color: #c8d2e0;
-  text-decoration: none;
-  font-size: 13px;
-}
-.sidebar nav a:hover, .sidebar nav a.active { background: rgba(255,255,255,0.08); color: #fff; }
+.sidebar__nav { padding: 4px 20px 4px 26px; }
 .sidebar__user { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.12); margin-top: 12px; font-size: 12px; }
 .sidebar__user button { margin-top: 8px; }
 
