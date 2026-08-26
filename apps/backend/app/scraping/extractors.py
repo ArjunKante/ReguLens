@@ -156,6 +156,34 @@ def extract_table_label_value_pairs(
     return pairs
 
 
+def extract_div_grid_label_value_pairs(soup: BeautifulSoup, container_selectors: list[str]) -> list[tuple[str, str]]:
+    """The div-based equivalent of extract_table_label_value_pairs, for
+    marketplaces whose specification panel is no longer a real <table> at
+    all. A live-listing test (Demo Hardening) found Flipkart's "Product
+    Details" panel — which app/scraping/flipkart.py's own docstring
+    described as "a genuine label:value specification table" — has since
+    become a flex-div grid with zero <table> tags anywhere on the page, so
+    extract_table_label_value_pairs (0 <table> elements) silently found
+    nothing at all; this is why MRP/net_quantity/manufacturer recall on a
+    real Flipkart page depended entirely on the generic fallback-text
+    regexes, which is exactly what let the unanchored net_quantity/MRP
+    patterns' false positives dominate (see app/nlp/patterns.py).
+
+    Unlike a <table>, there is no single shared row *tag* to search for —
+    each matched container in `container_selectors` is itself one row:
+    if it has exactly two non-empty direct-child text elements, they're
+    read as (label, value). A container with any other shape contributes
+    nothing (never guesses which of 3+ children is the label vs. value)."""
+    pairs: list[tuple[str, str]] = []
+    for selector in container_selectors:
+        for row in soup.select(selector):
+            cells = [c.get_text(strip=True) for c in row.find_all(["div", "span"], recursive=False)]
+            cells = [c for c in cells if c]
+            if len(cells) == 2 and len(cells[0]) <= 60:
+                pairs.append((cells[0], cells[1]))
+    return pairs
+
+
 _BULLET_LABEL_VALUE = re.compile(
     r"^(?P<label>[A-Za-z][A-Za-z0-9 /&\-\.]{1,40}?)[\s‎‏]*:[\s‎‏]*(?P<value>.{1,150})$"
 )

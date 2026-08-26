@@ -92,11 +92,19 @@ _KEYWORD_PATTERNS: list[tuple[str, re.Pattern, float]] = [
         ),
         0.85,
     ),
-    (
-        F.NET_QUANTITY,
-        _p(r"\b(?P<val>\d+(?:\.\d+)?\s*(?:g|gm|kg|ml|l|ltr|litre)\b)"),
-        0.45,
-    ),
+    # A previous, unanchored fallback here — bare "\d+\s*(?:g|kg|ml|...)"
+    # with no "net"/"quantity" keyword required, matching anywhere on the
+    # page — was removed after a live-listing test (Demo Hardening) found
+    # it matching a real Flipkart page's nutrition-facts panel ("Total Fat:
+    # 8 g", "Protein: 2 g", "Total Carbohydrate: 17 g", ...) and other
+    # recommended products' weights in a "similar products" carousel
+    # ("Real Spinach Chips 125 g"), producing 9 wrong net_quantity
+    # candidates against the listing's one real, correctly-labeled "163 g"
+    # (same root cause and same fix philosophy as the MRP bare-"₹" bug:
+    # never trust a bare number+unit with no declaration-context anchor).
+    # Platform CSS selectors and each adapter's label:value table
+    # extraction still independently catch quantity that has no "Net
+    # Quantity:" text label anywhere but does have a DOM structure hook.
     (
         F.MRP,
         _p(r"(?:mrp|m\.r\.p\.?|maximum\s*retail\s*price)\s*[:\-]?\s*(?:incl[^)]*\)?\s*)?"
