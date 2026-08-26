@@ -85,8 +85,14 @@ _KEYWORD_PATTERNS: list[tuple[str, re.Pattern, float]] = [
     ),
     (
         F.NET_QUANTITY,
+        # "Net Content(s)" is real, common packaging wording — verified on
+        # an actual Amul milk pouch this session — not a synonym the
+        # original "quantity/qty/weight/wt/volume/vol" list covered, so a
+        # pack correctly declaring quantity under that name was reported as
+        # a missing declaration (POTENTIAL_NON_COMPLIANCE) when it was
+        # right there on the pack, just under a different accepted term.
         _p(
-            r"(?:net\s*(?:quantity|qty|weight|wt|volume|vol)\.?)\s*[:\-]?\s*"
+            r"(?:net\s*(?:quantity|qty|weight|wt|volume|vol|content(?:s)?)\.?)\s*[:\-]?\s*"
             r"(?P<val>\d+(?:\.\d+)?\s*(?:g|gm|gram|grams|kg|kgs|ml|l|lt|ltr|litre|liter|"
             r"pieces|pcs|units?|nos?)\b)"
         ),
