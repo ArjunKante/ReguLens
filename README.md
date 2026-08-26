@@ -29,6 +29,7 @@ for how the architecture leaves room for it.
 | Doc | Contents |
 |---|---|
 | [`docs/legal-rules.md`](docs/legal-rules.md) | The structured, source-traceable rule database — every implemented rule, its statutory citation, and what's explicitly out of scope |
+| [`docs/traceability-matrix.md`](docs/traceability-matrix.md) | Rule → source → effective date → applicability → implementation status → test case, for every online rule — "how do you know this is a violation?" |
 | [`docs/architecture.md`](docs/architecture.md) | System design, module boundaries, data flow |
 | [`docs/api.md`](docs/api.md) | REST API reference |
 | [`docs/scraper.md`](docs/scraper.md) | Scraping subsystem design, adapters, safety/legality controls |
