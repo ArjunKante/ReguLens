@@ -1,0 +1,13 @@
+.gradient-waves-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Shown when WebGL2 construction fails (see GradientWaves.tsx) — a static
+   approximation of the wave palette so the hero still looks intentional,
+   not broken, on a workstation without WebGL2 support. */
+.gradient-waves-container--fallback {
+  background: linear-gradient(180deg, var(--wave-horizon, #0b1830) 0%, var(--wave-mid, #1a3a6b) 100%);
+}

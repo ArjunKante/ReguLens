@@ -1,12 +1,15 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { FloatingDotsButton } from "../components/FloatingDotsButton";
+import GradientWaves from "../components/GradientWaves";
 import { useAuth } from "../context/AuthContext";
 
 export function LoginPage() {
   const { user, login, loading, error } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const aboutRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   if (user) return <Navigate to="/dashboard" replace />;
 
@@ -20,39 +23,111 @@ export function LoginPage() {
   }
 
   return (
-    <div className="login-shell">
-      <div className="login-card">
-        <h1>LM-SCAN</h1>
-        <p className="tagline">AI-Assisted Online Legal Metrology Compliance Inspection</p>
-        <form onSubmit={handleSubmit}>
-          <div className="form-row">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="username"
-            />
+    <div className="landing">
+      <section className="hero">
+        <div className="hero__waves">
+          {/* Tuned to LM-SCAN's own navy/blue palette rather than the
+              reference's purple/pink defaults — this is a compliance
+              inspection tool, not a consumer product landing page. */}
+          <GradientWaves
+            horizonColor="#0b1830"
+            waveColor="#1a3a6b"
+            crestColor="#8fb8ff"
+            speed={0.35}
+            amplitude={2.2}
+            waveScale={0.55}
+            waveRatio={0.9}
+            swell={30}
+            turbulence={16}
+            tilt={1.11}
+            zoom={1.0}
+            height={5.5}
+            fogDepth={15}
+            detail="medium"
+            brightness={1.0}
+            opacity={1.0}
+            mouseInteraction
+            parallaxStrength={0.4}
+            grain
+            grainIntensity={0.04}
+          />
+        </div>
+        <div className="hero__content">
+          <h1>LM-SCAN</h1>
+          <p className="hero__tagline">AI-Assisted Online Legal Metrology Compliance Inspection</p>
+          <p className="hero__subtext">
+            Preliminary, AI-assisted compliance screening for packaged-commodity listings — built to help an
+            authorized Legal Metrology officer inspect faster, not to replace their judgment.
+          </p>
+          <div className="hero__actions">
+            <FloatingDotsButton type="button" onClick={() => formRef.current?.scrollIntoView({ behavior: "instant" })}>
+              Get Started
+            </FloatingDotsButton>
+            <button
+              type="button"
+              className="hero__secondary-btn"
+              onClick={() => aboutRef.current?.scrollIntoView({ behavior: "instant" })}
+            >
+              Learn more
+            </button>
           </div>
-          <div className="form-row">
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-          <FloatingDotsButton type="submit" disabled={loading} style={{ width: "100%" }}>
-            {loading ? "Signing in…" : "Sign in"}
-          </FloatingDotsButton>
-          {error && <p className="error-text">{error}</p>}
-        </form>
-      </div>
+        </div>
+      </section>
+
+      <section className="about" ref={aboutRef}>
+        <div className="about__inner">
+          <h2>What LM-SCAN does</h2>
+          <p>
+            LM-SCAN retrieves a public product listing from a marketplace or quick-commerce platform, extracts
+            declarations from the page text, structured metadata, and product images via OCR, and evaluates them
+            against a source-traceable rule database derived from the Legal Metrology (Packaged Commodities)
+            Rules, 2011.
+          </p>
+          <p>
+            Every automated finding is explicitly labeled — <strong>PASS</strong>,{" "}
+            <strong>POTENTIAL_NON_COMPLIANCE</strong>, <strong>NEEDS_MANUAL_REVIEW</strong>,{" "}
+            <strong>NOT_APPLICABLE</strong>, or <strong>UNABLE_TO_VERIFY</strong> — with evidence and a
+            confidence score, and every report carries the disclaimer{" "}
+            <em>"Automated Preliminary Compliance Assessment — Subject to Verification by an Authorized Officer."</em>{" "}
+            LM-SCAN is not a legally binding decision maker.
+          </p>
+        </div>
+      </section>
+
+      <section className="login-shell" ref={formRef}>
+        <div className="login-card">
+          <h1>Sign in</h1>
+          <p className="tagline">Authorized officer access only</p>
+          <form onSubmit={handleSubmit}>
+            <div className="form-row">
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+            <FloatingDotsButton type="submit" disabled={loading} style={{ width: "100%" }}>
+              {loading ? "Signing in…" : "Sign in"}
+            </FloatingDotsButton>
+            {error && <p className="error-text">{error}</p>}
+          </form>
+        </div>
+      </section>
     </div>
   );
 }
