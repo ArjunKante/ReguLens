@@ -4,10 +4,12 @@ without changing the core compliance engine — for now implement the
 architecture and at least one working adapter")."""
 from __future__ import annotations
 
+from app.scraping.amazon import AmazonScraper
 from app.scraping.base import GenericProductPageScraper, ProductScraper
 from app.scraping.blinkit import BlinkitScraper
+from app.scraping.flipkart import FlipkartScraper
 
-_ADAPTERS: list[type[ProductScraper]] = [BlinkitScraper]
+_ADAPTERS: list[type[ProductScraper]] = [BlinkitScraper, AmazonScraper, FlipkartScraper]
 
 
 def get_scraper_for_url(url: str) -> ProductScraper:

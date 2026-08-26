@@ -15,17 +15,25 @@ class ProductScraper(ABC):
 ```
 
 `GenericProductPageScraper` implements every method using only strategies
-that work on any e-commerce page. `BlinkitScraper` subclasses it and adds a
-`CSS_SELECTOR` layer on top via a centralized `SELECTORS` dict
-(`app/scraping/blinkit.py`) — if Blinkit changes its markup, only that dict
-needs updating, and even a completely stale selector degrades to "slightly
-lower confidence," not "zero data," because the generic strategies still
-run underneath. `app/scraping/registry.py::get_scraper_for_url` resolves a
-URL to the most specific adapter, falling back to `GenericProductPageScraper`
-(Section 26: "at least one working adapter" plus an architecture that
-supports Amazon/Flipkart/Zepto/BigBasket later without touching the
-compliance engine — adding one is: subclass, override `can_handle` and add
-a `SELECTORS` dict, register in `_ADAPTERS`).
+that work on any e-commerce page. `BlinkitScraper`, `AmazonScraper`, and
+`FlipkartScraper` subclass it and add a `CSS_SELECTOR` layer on top via
+centralized selector lists (`app/scraping/blinkit.py`,
+`app/scraping/amazon.py`, `app/scraping/flipkart.py`) — if a marketplace
+changes its markup, only that adapter's file needs updating, and even a
+completely stale selector degrades to "slightly lower confidence," not
+"zero data," because the generic strategies still run underneath. Amazon
+and Flipkart additionally render declarations (net quantity, manufacturer,
+country of origin) as label:value table rows or bullet lists rather than
+free text — `app/scraping/extractors.py::extract_table_label_value_pairs`
+and `extract_bullet_label_value_pairs` read those generically by row/label
+shape (verified against live Amazon.in and Flipkart product pages), which
+survives marketplace class-name churn better than a CSS selector could.
+`app/scraping/registry.py::get_scraper_for_url` resolves a URL to the most
+specific adapter, falling back to `GenericProductPageScraper` (Section 26:
+"at least one working adapter" plus an architecture that supports
+Zepto/BigBasket/... later without touching the compliance engine — adding
+one is: subclass, override `can_handle` and add a `SELECTORS` dict, register
+in `_ADAPTERS`).
 
 ## Extraction strategies (Section 3)
 
