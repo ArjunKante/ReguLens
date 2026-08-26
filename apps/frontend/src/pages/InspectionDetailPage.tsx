@@ -7,6 +7,7 @@ import {
   getInspection,
   uploadScreenshots,
 } from "../api/endpoints";
+import AnimatedList from "../components/AnimatedList";
 import { ConfidenceBar } from "../components/ConfidenceBar";
 import { DisclaimerBanner } from "../components/DisclaimerBanner";
 import { StatusBadge } from "../components/StatusBadge";
@@ -162,44 +163,59 @@ export function InspectionDetailPage() {
                 <h3>
                   <StatusBadge status={status} /> ({checks.length})
                 </h3>
-                {checks.map((check) => (
-                  <div key={check.id} className={`card check-card status-${check.status}`}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <strong>{check.rule.title}</strong>
-                      <ConfidenceBar confidence={check.confidence} />
-                    </div>
-                    <p style={{ fontSize: 12.5, color: "var(--color-text-muted)", margin: "4px 0" }}>
-                      {check.rule.rule_key} — {check.rule.rule_reference} · Source: {check.rule.source_document} (
-                      {check.rule.source_locator}) · v{check.rule.version_number}
-                    </p>
-                    <p style={{ fontSize: 13 }}>{check.reason}</p>
-
-                    {check.evidence.length > 0 && (
-                      <details>
-                        <summary style={{ cursor: "pointer", fontSize: 12.5 }}>
-                          View evidence ({check.evidence.length})
-                        </summary>
-                        {check.evidence.map((ev) => (
-                          <div key={ev.id} className="evidence-item">
-                            [{ev.evidence_type}] {ev.description}
-                          </div>
-                        ))}
-                      </details>
-                    )}
-
-                    {canReview && <ReviewPanel inspectionId={inspection.id} check={check} onReviewed={load} />}
-                    {!canReview && check.review_decisions.length > 0 && (
-                      <div style={{ marginTop: 8, fontSize: 12.5 }}>
-                        {check.review_decisions.map((rd) => (
-                          <div key={rd.id}>
-                            Reviewer decision: <strong>{rd.decision}</strong> → {rd.final_status} by {rd.reviewer_name}
-                            {rd.comment ? `: ${rd.comment}` : ""}
-                          </div>
-                        ))}
+                <AnimatedList
+                  items={checks}
+                  showGradients
+                  // Off, not just guarded: with up to five of these lists on
+                  // one page (one per status group), each would otherwise
+                  // register its own global Tab/Arrow listener and fight
+                  // over the keystroke. The findings cards below also embed
+                  // real form controls (ReviewPanel), so hijacking Tab site-
+                  // wide the moment this mounts would break normal focus
+                  // navigation through them — the entrance/hover animation
+                  // is what's actually wanted here, not list keynav.
+                  enableArrowNavigation={false}
+                  displayScrollbar={checks.length > 3}
+                  initialSelectedIndex={null}
+                  renderItem={(check: ComplianceCheck) => (
+                    <div className={`card check-card status-${check.status}`}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <strong>{check.rule.title}</strong>
+                        <ConfidenceBar confidence={check.confidence} />
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <p style={{ fontSize: 12.5, color: "var(--color-text-muted)", margin: "4px 0" }}>
+                        {check.rule.rule_key} — {check.rule.rule_reference} · Source: {check.rule.source_document} (
+                        {check.rule.source_locator}) · v{check.rule.version_number}
+                      </p>
+                      <p style={{ fontSize: 13 }}>{check.reason}</p>
+
+                      {check.evidence.length > 0 && (
+                        <details>
+                          <summary style={{ cursor: "pointer", fontSize: 12.5 }}>
+                            View evidence ({check.evidence.length})
+                          </summary>
+                          {check.evidence.map((ev) => (
+                            <div key={ev.id} className="evidence-item">
+                              [{ev.evidence_type}] {ev.description}
+                            </div>
+                          ))}
+                        </details>
+                      )}
+
+                      {canReview && <ReviewPanel inspectionId={inspection.id} check={check} onReviewed={load} />}
+                      {!canReview && check.review_decisions.length > 0 && (
+                        <div style={{ marginTop: 8, fontSize: 12.5 }}>
+                          {check.review_decisions.map((rd) => (
+                            <div key={rd.id}>
+                              Reviewer decision: <strong>{rd.decision}</strong> → {rd.final_status} by {rd.reviewer_name}
+                              {rd.comment ? `: ${rd.comment}` : ""}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                />
               </div>
             );
           })}

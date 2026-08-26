@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
+import { FloatingDotsButton } from "../components/FloatingDotsButton";
 import { useAuth } from "../context/AuthContext";
 
 export function LoginPage() {
@@ -46,9 +47,9 @@ export function LoginPage() {
               autoComplete="current-password"
             />
           </div>
-          <button type="submit" disabled={loading} style={{ width: "100%" }}>
+          <FloatingDotsButton type="submit" disabled={loading} style={{ width: "100%" }}>
             {loading ? "Signing in…" : "Sign in"}
-          </button>
+          </FloatingDotsButton>
           {error && <p className="error-text">{error}</p>}
         </form>
       </div>
