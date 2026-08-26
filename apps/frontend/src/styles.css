@@ -172,12 +172,13 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 }
 .hero__secondary-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.7); }
 
-.about { background: var(--color-bg); padding: 72px 24px; }
+.about { position: relative; background: var(--color-bg); padding: 72px 24px; }
 .about__inner { max-width: 680px; margin: 0 auto; }
 .about__inner h2 { font-size: 22px; margin: 0 0 16px 0; }
 .about__inner p { font-size: 14px; line-height: 1.7; color: var(--color-text); margin: 0 0 14px 0; }
 
 .login-shell {
+  position: relative;
   min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-bg);
   padding: 48px 24px;
 }
