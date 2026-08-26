@@ -1,21 +1,34 @@
 """Amazon.in product-page adapter (Section 3/26).
 
 Verified against live Amazon.in product pages rather than guessed from
-memory. Two things held true across the pages checked:
+memory — including one dead end worth recording so it isn't re-attempted:
 
-- `#productTitle` and the `.a-price`/`.a-price.a-text-price` price classes
-  are Amazon's long-stable ids/classes for the title and selling/MRP price —
-  worth a dedicated CSS_SELECTOR candidate.
+- `#productTitle` is Amazon's long-stable, unique id for the title — safe
+  to match unscoped, confirmed correct against a real listing.
+- Grabbing MRP from a `.a-price`-family price element was tried and
+  abandoned. `.a-price.a-text-price` (the strikethrough "was" price) is not
+  unique to the primary listing — a "compare with similar items" carousel,
+  or even an alternate seller's offer for the *same* product, can carry the
+  exact same class on a different price entirely. Two attempts at scoping
+  this to a "primary buybox" container id (`#corePriceDisplay_desktop_feature_div`
+  and similar) still picked up the wrong price on a real page — Amazon
+  apparently renders other sellers' offers inside that same container for
+  at least some grocery listings, so there is no CSS-only way to reliably
+  tell "the real MRP" apart from "some other price" without confirmed,
+  page-specific knowledge this adapter doesn't have. Rather than keep
+  guessing increasingly specific selectors against an unverified DOM, MRP
+  is deliberately left to the two strategies that *are* verified reliable:
+  the label:value extraction below (an explicit "M.R.P"/"MRP" label paired
+  with a value is a real, low-ambiguity signal) and the inherited
+  GenericProductPageScraper fallback-text regex.
 - Net quantity / manufacturer / country of origin, when present at all,
-  aren't under a stable class name — they're rows in Amazon's "detail
-  bullets" list (`#detailBullets_feature_div li`, one label:value pair per
-  `<li>`) or its technical-details table (`#productDetails_techSpec_section_1`).
-  Grocery listings frequently have neither (MRP then only appears as plain
-  "M.R.P: ₹X" text, e.g. in the "compare with similar items" block) — when
-  that happens this adapter contributes nothing extra and the inherited
-  GenericProductPageScraper strategies (JSON-LD/OpenGraph/fallback text
-  regex, which does catch "M.R.P: ₹X") are what actually finds the value.
-  That's intentional, not a gap: Section 27 requires extraction to degrade
+  aren't under a stable class name either — they're rows in Amazon's
+  "detail bullets" list (`#detailBullets_feature_div li`, one label:value
+  pair per `<li>`) or its technical-details table
+  (`#productDetails_techSpec_section_1`). Grocery listings frequently have
+  neither — when that happens this adapter contributes nothing extra and
+  the inherited generic strategies are what actually find a value. That's
+  intentional, not a gap: Section 27 requires extraction to degrade
   gracefully rather than depend on any one marketplace's markup forever.
 """
 from __future__ import annotations
@@ -35,7 +48,6 @@ from app.scraping.extractors import (
 logger = logging.getLogger(__name__)
 
 TITLE_SELECTORS: list[str] = ["#productTitle", "h1#title span#productTitle", "h1#title"]
-MRP_SELECTORS: list[str] = ["span.a-price.a-text-price span.a-offscreen", ".basisPrice .a-offscreen"]
 
 # Containers known (from live inspection) to hold Amazon's label:value
 # declaration rows, when a given listing has them at all.
@@ -72,28 +84,9 @@ class AmazonScraper(GenericProductPageScraper):
             if not product.title:
                 product.title = title
 
-        mrp = self._first_match(soup, MRP_SELECTORS)
-        if mrp:
-            product.field_candidates.append(
-                FieldExtraction(
-                    field_name="mrp",
-                    value=mrp,
-                    strategy=ExtractionStrategyName.CSS_SELECTOR,
-                    # Deliberately above the generic fallback-text MRP
-                    # ceiling (0.7 — app/nlp/patterns.py's bare "₹<amount>"
-                    # pattern, which matches ANY rupee amount on the page,
-                    # selling price included, with no label context). This
-                    # selector specifically targets Amazon's strikethrough
-                    # "was" price class, which the *selling* price never
-                    # carries — verified live: without out-ranking the
-                    # promiscuous fallback here, a tie on confidence is
-                    # resolved in text order, and Amazon shows the selling
-                    # price before the MRP, so the wrong one would win.
-                    confidence=0.8,
-                    raw_snippet=mrp,
-                )
-            )
-
+        # No CSS-selector MRP guess here — see the module docstring for why
+        # that was tried and abandoned. MRP comes only from the label:value
+        # extraction below and the inherited generic fallback-text regex.
         pairs = extract_table_label_value_pairs(soup, TABLE_CONTAINER_SELECTORS)
         pairs += extract_bullet_label_value_pairs(soup, BULLET_CONTAINER_SELECTORS)
         product.field_candidates.extend(field_candidates_from_label_value_pairs(pairs))

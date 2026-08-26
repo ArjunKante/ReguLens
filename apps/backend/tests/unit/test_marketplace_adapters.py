@@ -44,12 +44,19 @@ def test_amazon_listing_extracts_declaration_bullets():
     assert "Tasty Foods" in (best("manufacturer_name") or "")
     assert best("country_of_origin") == "India"
     assert "100" in (best("net_quantity") or "")
-    # Regression: the page also shows the (lower) selling price as bare
-    # "₹55.00" text, which the generic fallback-text MRP pattern also
-    # matches with no label context. best("mrp") must resolve to the real
-    # MRP (₹60.00, from the dedicated strikethrough-price selector), not
-    # whichever ₹ amount the selling price happens to be.
+    # MRP comes from the explicit "M.R.P ‏ : ‎ ₹60.00" bullet, not a raw
+    # price-element selector (see amazon.py's module docstring for why that
+    # approach was tried against a live page and abandoned as unreliable).
+    # The page also shows the (lower) selling price as bare "₹55.00" text,
+    # which the generic fallback-text MRP pattern also matches with no
+    # label context — best("mrp") must resolve to the labeled ₹60.00, not
+    # that ambiguous ₹55.00.
     assert "60.00" in (best("mrp") or "")
+    # Regression (caught live against a real Amazon.in page): a "compare
+    # with similar items" carousel can carry a completely different
+    # product's price. It has no recognized label here, so the label:value
+    # extraction correctly ignores it — best("mrp") must never resolve to it.
+    assert "999.99" not in (best("mrp") or "")
     # "Customer Care ‏ : ‎ care@tastymunch.example, +91-..." is read as one
     # consumer_care_name candidate off the detail-bullets row; the email
     # itself is additionally caught by the platform-agnostic fallback-text
@@ -87,11 +94,12 @@ def test_flipkart_listing_extracts_specification_table():
     assert best("country_of_origin") == "India"
     assert "100" in (best("net_quantity") or "")
     assert best("consumer_care_name") is not None  # from the "Marketed By" row
-    # Regression: the page also shows the (lower) selling price as bare "₹55"
-    # text, which the generic fallback-text MRP pattern also matches with no
-    # label context. best("mrp") must resolve to the real MRP (₹60, from the
-    # dedicated strikethrough-price selector), not whichever ₹ amount the
-    # selling price happens to be.
+    # MRP comes from the "MRP" row in the Product Details table, not a raw
+    # price-element selector (see flipkart.py's module docstring for why
+    # that approach was deliberately not attempted here). The page also
+    # shows the (lower) selling price as bare "₹55" text, which the generic
+    # fallback-text MRP pattern also matches with no label context —
+    # best("mrp") must resolve to the labeled ₹60, not that ambiguous ₹55.
     assert "60" in (best("mrp") or "")
 
 

@@ -157,7 +157,7 @@ def extract_table_label_value_pairs(
 
 
 _BULLET_LABEL_VALUE = re.compile(
-    r"^(?P<label>[A-Za-z][A-Za-z0-9 /&\-]{1,40}?)[\s‎‏]*:[\s‎‏]*(?P<value>.{1,150})$"
+    r"^(?P<label>[A-Za-z][A-Za-z0-9 /&\-\.]{1,40}?)[\s‎‏]*:[\s‎‏]*(?P<value>.{1,150})$"
 )
 
 
@@ -210,13 +210,21 @@ SPEC_LABEL_FIELD_MAP: list[tuple[str, str]] = [
 
 
 def field_candidates_from_label_value_pairs(
-    pairs: list[tuple[str, str]], *, confidence: float = 0.7
+    pairs: list[tuple[str, str]], *, confidence: float = 0.75
 ) -> list[FieldExtraction]:
     """Converts (label, value) pairs into FieldExtraction candidates for
     every label recognized by SPEC_LABEL_FIELD_MAP. Kept separate from the
     row/bullet extraction above so it can be reused unchanged by any adapter
     that produces label:value pairs, regardless of whether they came from a
-    table or a bullet list."""
+    table or a bullet list.
+
+    Default confidence (0.75) is deliberately above the generic fallback-text
+    MRP pattern's ceiling (0.7, app/nlp/patterns.py's bare "₹<amount>" match
+    with no label context) — an explicit "MRP"/"M.R.P" *labeled* row is a
+    materially stronger signal than a bare currency amount found anywhere on
+    the page, and a same-confidence tie is resolved by list order (the
+    generic strategies run first, so they'd otherwise always win ties even
+    when this is the more trustworthy candidate)."""
     candidates: list[FieldExtraction] = []
     for label, value in pairs:
         if not value:
