@@ -9,16 +9,34 @@ import hashlib
 
 from sqlalchemy.orm import Session
 
+from app.demo_fixtures import DEMO_SOURCE_URL, load_demo_html
 from app.models.enums import WebFetchStatus
 from app.models.inspection import Inspection
 from app.models.scraping import WebExtraction, WebPage
 from app.scraping.data import ScrapedProduct
+from app.scraping.fetcher import StaticHTMLFetcher
 from app.scraping.registry import get_scraper_for_url
 from app.storage.files import save_raw_html
 
 
+def scrape_demo_fixture(db: Session, inspection: Inspection) -> tuple[WebPage, ScrapedProduct | None]:
+    """Demo Inspection mode's FETCH step: identical to scrape_product_page
+    below except the HTML source is a bundled local fixture (via
+    StaticHTMLFetcher — the same test-only fetcher the test suite already
+    uses, not a new mechanism) instead of a live Playwright fetch. Every
+    other line of extraction logic is the real FlipkartScraper, completely
+    unmodified."""
+    scraper = get_scraper_for_url(DEMO_SOURCE_URL)
+    scraper.fetcher = StaticHTMLFetcher(html=load_demo_html(), url=DEMO_SOURCE_URL)
+    return _scrape_with(db, inspection, DEMO_SOURCE_URL, scraper)
+
+
 def scrape_product_page(db: Session, inspection: Inspection, url: str) -> tuple[WebPage, ScrapedProduct | None]:
     scraper = get_scraper_for_url(url)
+    return _scrape_with(db, inspection, url, scraper)
+
+
+def _scrape_with(db: Session, inspection: Inspection, url: str, scraper) -> tuple[WebPage, ScrapedProduct | None]:  # noqa: ANN001
     fetch_result = scraper.fetch_page(url)
 
     raw_html_path = None

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { createInspection, scanUrl } from "../api/endpoints";
+import { createDemoInspection, createInspection, scanUrl } from "../api/endpoints";
 
 const PLATFORM_HINTS: { match: RegExp; label: string }[] = [
   { match: /blinkit\.com/i, label: "Blinkit" },
@@ -46,6 +46,25 @@ export function NewInspectionPage() {
       navigate(`/inspections/${inspection.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start manual inspection.");
+      setSubmitting(false);
+    }
+  }
+
+  // Demo Inspection mode: a controlled, reproducible inspection sourced
+  // from a bundled real-listing fixture instead of a live fetch, for
+  // showing the full pipeline live without depending on network
+  // conditions, a marketplace's uptime, or anti-bot behavior at demo time.
+  // Runs the exact same pipeline/compliance engine as a real scan; the
+  // result is clearly labeled "DEMO" throughout and is never presented as
+  // a finding about a real, currently-live listing.
+  async function handleDemoInspection() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const inspection = await createDemoInspection();
+      navigate(`/inspections/${inspection.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start demo inspection.");
       setSubmitting(false);
     }
   }
@@ -96,6 +115,18 @@ export function NewInspectionPage() {
           </button>
           {error && <p className="error-text">{error}</p>}
         </form>
+      </div>
+
+      <div className="card" style={{ maxWidth: 560 }}>
+        <h3>Demo Inspection</h3>
+        <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+          Run the full pipeline end-to-end against a bundled, reproducible fixture (a real captured listing) instead
+          of a live fetch — useful for a demo where live scraping's network dependency isn't acceptable. The result
+          is clearly marked <strong>DEMO</strong> throughout and is never a finding about a real, currently-live listing.
+        </p>
+        <button type="button" className="secondary" onClick={handleDemoInspection} disabled={submitting}>
+          {submitting ? "Starting…" : "Run Demo Inspection"}
+        </button>
       </div>
 
       <div className="card" style={{ maxWidth: 560 }}>

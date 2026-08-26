@@ -4,7 +4,7 @@ import datetime as dt
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -45,6 +45,13 @@ class Inspection(Base, UUIDPKMixin, TimestampMixin):
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Demo Hardening: a controlled, reproducible, network-independent
+    # inspection for live demos (bundled fixture evidence instead of a live
+    # fetch) — runs the exact same pipeline/compliance engine as a real
+    # inspection, so it must be unmistakable everywhere it's shown that this
+    # is NOT a real finding about a real, currently-live listing.
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     officer: Mapped["User"] = relationship(foreign_keys=[officer_id])
     product: Mapped["Product | None"] = relationship(back_populates="inspections")

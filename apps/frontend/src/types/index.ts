@@ -59,6 +59,7 @@ export interface InspectionSummary {
   product_title: string | null;
   created_at: string;
   completed_at: string | null;
+  is_demo: boolean;
 }
 
 export interface PipelineEvent {
@@ -77,6 +78,11 @@ export interface Declaration {
   source_type: string;
   confidence: number;
   extraction_method: string | null;
+  // Exposed so the UI can trace a declaration back to the exact image/OCR
+  // block/webpage that produced it (rule -> evidence -> finding traceability).
+  source_product_image_id: string | null;
+  source_ocr_result_id: string | null;
+  source_web_page_id: string | null;
 }
 
 export interface EvidenceItem {
@@ -84,6 +90,7 @@ export interface EvidenceItem {
   evidence_type: string;
   description: string;
   reference: Record<string, unknown>;
+  declaration_id: string | null;
 }
 
 export interface Violation {
@@ -128,6 +135,21 @@ export interface ComplianceCheck {
   review_decisions: ReviewDecision[];
 }
 
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface OCRResultItem {
+  id: string;
+  engine: string;
+  text: string;
+  confidence: number;
+  bounding_box: BoundingBox | null;
+}
+
 export interface ProductImage {
   id: string;
   source_type: string;
@@ -139,6 +161,7 @@ export interface ProductImage {
   glare_detected: boolean | null;
   quality_acceptable: boolean | null;
   quality_notes: string | null;
+  ocr_results: OCRResultItem[];
 }
 
 export interface WebPage {
@@ -159,6 +182,7 @@ export interface InspectionDetail extends InspectionSummary {
   images: ProductImage[];
   web_pages: WebPage[];
   pipeline_events: PipelineEvent[];
+  pipeline_duration_ms: number | null;
 }
 
 export interface DashboardStatistics {

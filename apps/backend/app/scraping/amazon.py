@@ -81,8 +81,18 @@ class AmazonScraper(GenericProductPageScraper):
                     raw_snippet=title,
                 )
             )
-            if not product.title:
-                product.title = title
+            # Always wins over the generic og:title/JSON-LD/<title> chain
+            # already applied by the parent class, not just when that chain
+            # came up empty (`if not product.title` was previously a
+            # near-dead guard, since the parent's meta-tag fallback chain
+            # is truthy on almost every real page). This was a real,
+            # live-verified bug (Demo Hardening live-listing test): Amazon.in
+            # sets `og:title` to the bare literal string "Amazon" site-wide
+            # rather than a per-product value, so `product_title` displayed
+            # "Amazon" for every single Amazon inspection even though
+            # #productTitle (long-stable, verified reliable — see module
+            # docstring) had the real product name the whole time.
+            product.title = title
 
         # No CSS-selector MRP guess here — see the module docstring for why
         # that was tried and abandoned. MRP comes only from the label:value

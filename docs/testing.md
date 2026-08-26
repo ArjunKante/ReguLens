@@ -1,11 +1,11 @@
 # Testing
 
-## Actual, current results (last run: this session, 2026-08-25)
+## Actual, current results (last run: this session, 2026-08-26 — Demo Hardening)
 
 ```
 $ cd apps/backend && python -m pytest tests/ -v
 ...
-44 passed, 40 warnings in ~25s
+106 passed, 101 warnings in ~55s
 ```
 
 ```
@@ -20,7 +20,7 @@ $ cd apps/backend && ruff check app/ tests/
 All checks passed!
 
 $ cd apps/backend && mypy app/ --ignore-missing-imports
-8 errors (all one documented pattern — see "Known mypy limitation" below)
+9 errors (all one documented pattern — see "Known mypy limitation" below)
 
 $ cd apps/frontend && npm run lint && npm run build
 (clean — tsc -b type-checks with zero errors, eslint zero errors/warnings)
@@ -39,25 +39,40 @@ apps/backend/tests/
   unit/
     test_scraper_extraction.py     12 tests — JSON-LD/OG/fallback-text extraction,
                                     6 fixture scenarios, all scraper-failure statuses
+    test_marketplace_adapters.py    8 tests — Amazon/Flipkart adapters, incl. Demo
+                                    Hardening title-priority regressions
     test_image_quality.py          4 tests — blur/contrast/glare/resolution heuristics
     test_ocr_tesseract.py          2 tests — real tesseract binary (skipped if absent)
     test_declaration_extraction.py 4 tests — webpage/OCR consolidation, dedup logic
+    test_patterns.py               6 tests — field-extraction regexes, incl. Demo
+                                    Hardening MRP/manufacturer false-positive regressions
     test_classification.py         5 tests — category classifier
     test_rule_versioning.py        2 tests — idempotent load, version-on-change
+    test_url_safety.py            20 tests — SSRF protection, marketplace hostname
+                                    matching (no live network — mocked DNS)
+    test_reports.py                3 tests — HTML/PDF report rendering, Demo
+                                    Inspection banner presence/absence
   integration/
-    test_compliance_engine.py     12 tests — PASS/POTENTIAL_NON_COMPLIANCE/
+    test_compliance_engine.py     30 tests — PASS/POTENTIAL_NON_COMPLIANCE/
                                     NEEDS_MANUAL_REVIEW/NOT_APPLICABLE/UNABLE_TO_VERIFY
-                                    for real rules, cross-source consistency PASS+FAIL
-    test_pipeline.py               2 tests — full FETCH→REPORT pipeline (mocked
-                                    scraper/downloads), graceful fetch-failure handling
-    test_api_workflow.py           1 test  — full HTTP-layer workflow: login → create
-                                    inspection → scan → review → report → dashboard →
-                                    rules, including RBAC-denial assertions
+                                    for every seeded rule, cross-source consistency
+                                    PASS+FAIL for all 5 consistency checks
+    test_pipeline.py               7 tests — full FETCH→REPORT pipeline (mocked
+                                    scraper/downloads), graceful fetch-failure handling,
+                                    re-analysis non-duplication, hollow-success
+                                    detection, pipeline-duration recording, Demo
+                                    Inspection mode end-to-end with NO network mocking
+    test_api_workflow.py           3 tests — full HTTP-layer workflow: login → create
+                                    inspection → scan → review → evidence image → report
+                                    → dashboard → rules (RBAC-denial assertions
+                                    throughout), manual-scan creation, Demo Inspection
+                                    endpoint
 ```
 
-That's 44 tests covering Section 34's checklist: unit tests, integration
-tests, API tests, database tests (every test runs against a real Postgres
-database, not an in-memory mock), rule engine tests, scraper tests, OCR
+That's 106 tests covering Section 34's checklist: unit tests, integration
+tests, API tests, database tests (every test runs against a real,
+dedicated `<name>_test` Postgres database — never the dev/prod one — not
+an in-memory mock), rule engine tests, scraper tests, OCR
 parsing tests, declaration extraction tests, and consistency tests.
 
 ## Rule engine test coverage against Section 37
@@ -173,9 +188,10 @@ npm run build   # runs tsc -b, i.e. a full type-check, then bundles
 
 ## Known mypy limitation
 
-8 of the ~10 SQLAlchemy model files declare columns as `Mapped[SomeEnum]`
-backed by a plain `String` column (storing the enum's `.value` at write
-time). This is functionally correct — confirmed by all 44 passing tests,
+9 assignment sites across a handful of SQLAlchemy model files declare
+columns as `Mapped[SomeEnum]` backed by a plain `String` column (storing
+the enum's `.value` at write time). This is functionally correct —
+confirmed by all 106 passing tests,
 which write and read these columns constantly — but mypy flags assigning a
 plain `str` (e.g. `inspection.status = InspectionStatus.COMPLETED.value`)
 to a `Mapped[InspectionStatus]`-typed attribute as a type mismatch. This is
