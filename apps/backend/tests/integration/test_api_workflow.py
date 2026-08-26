@@ -162,3 +162,30 @@ def test_full_officer_workflow(db: Session, monkeypatch):
     assert resp.status_code == 403
 
     app.dependency_overrides.clear()
+
+
+def test_manual_scan_inspection_can_be_created_without_a_source_url(db: Session):
+    """The New Inspection page's "scan via photos" entry point: an officer
+    with no listing URL at all must still be able to start an inspection —
+    the endpoint accepts an omitted (or null) source_url rather than
+    rejecting it as a missing required field."""
+    _create_user(db, RoleName.INSPECTOR, "manual-scan-inspector@lmscan.example", "TestPassword!123")
+    client = _client(db)
+
+    resp = client.post(
+        "/api/v1/auth/login", json={"email": "manual-scan-inspector@lmscan.example", "password": "TestPassword!123"}
+    )
+    assert resp.status_code == 200, resp.text
+    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    # omitted entirely
+    resp = client.post("/api/v1/inspections", json={"notes": "No listing URL — inspected from photos only."}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_url"] is None
+
+    # explicit null is equally valid
+    resp = client.post("/api/v1/inspections", json={"source_url": None}, headers=headers)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_url"] is None
+
+    app.dependency_overrides.clear()

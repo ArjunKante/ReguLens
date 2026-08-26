@@ -66,7 +66,11 @@ export function InspectionDetailPage() {
   if (error) return <p className="error-text">{error}</p>;
   if (!inspection) return <p className="loading-text">Loading inspection…</p>;
 
-  const fetchFailed = inspection.web_pages.some((wp) => wp.fetch_status !== "SUCCESS");
+  // True both for the original case (an automatic fetch attempt failed) and
+  // for a manual-scan inspection (no listing URL was ever provided, so
+  // there was never a fetch to attempt) — either way the officer needs the
+  // upload-screenshots card below.
+  const fetchFailed = !inspection.source_url || inspection.web_pages.some((wp) => wp.fetch_status !== "SUCCESS");
   const canAct = user?.role === "ADMIN" || user?.role === "INSPECTOR";
   const canReview = user?.role === "ADMIN" || user?.role === "REVIEWER";
 
@@ -105,15 +109,18 @@ export function InspectionDetailPage() {
     <div>
       <h1>{inspection.inspection_number}</h1>
       <p className="page-subtitle">
-        {inspection.product_title ?? inspection.source_url} · Platform: {inspection.platform ?? "unknown"}
+        {inspection.product_title ?? inspection.source_url ?? "Manual inspection — no listing URL"} · Platform:{" "}
+        {inspection.platform ?? "unknown"}
       </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
         <StatusBadge status={inspection.status} />
         <StatusBadge status={inspection.overall_status} />
-        <a href={inspection.source_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>
-          View original listing ↗
-        </a>
+        {inspection.source_url && (
+          <a href={inspection.source_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>
+            View original listing ↗
+          </a>
+        )}
       </div>
 
       {(inspection.status === "IN_PROGRESS" || inspection.status === "CREATED") && (
@@ -137,13 +144,21 @@ export function InspectionDetailPage() {
 
       {fetchFailed && canAct && (
         <div className="card">
-          <h3>Automatic page extraction unavailable</h3>
+          <h3>{inspection.source_url ? "Automatic page extraction unavailable" : "Manual scan — upload or take photos"}</h3>
           <p style={{ fontSize: 13 }}>
-            {inspection.web_pages.find((wp) => wp.fetch_status !== "SUCCESS")?.error_message ??
-              "The page could not be automatically retrieved."}{" "}
-            Upload screenshots of the product listing/label to continue this inspection.
+            {inspection.source_url
+              ? inspection.web_pages.find((wp) => wp.fetch_status !== "SUCCESS")?.error_message ??
+                "The page could not be automatically retrieved."
+              : "No listing URL was provided for this inspection."}{" "}
+            Upload or take photos of the product listing/label to continue this inspection.
           </p>
-          <input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={(e) => setFiles(e.target.files)} />
+          <input
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp"
+            capture="environment"
+            onChange={(e) => setFiles(e.target.files)}
+          />
           <button onClick={handleUpload} disabled={!files || uploading} style={{ marginLeft: 10 }}>
             {uploading ? "Uploading…" : "Upload screenshots & re-analyze"}
           </button>

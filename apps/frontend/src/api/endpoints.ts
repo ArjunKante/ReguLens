@@ -23,8 +23,10 @@ export function getInspection(id: string) {
   return api.get<InspectionDetail>(`/inspections/${id}`);
 }
 
-export function createInspection(sourceUrl: string, notes?: string) {
-  return api.post<InspectionSummary>("/inspections", { source_url: sourceUrl, notes });
+/** sourceUrl omitted (or blank) starts a "manual scan" inspection — evidence
+ * comes entirely from uploaded/captured photos, with no listing to fetch. */
+export function createInspection(sourceUrl?: string, notes?: string) {
+  return api.post<InspectionSummary>("/inspections", { source_url: sourceUrl?.trim() || null, notes });
 }
 
 export function scanUrl(id: string) {

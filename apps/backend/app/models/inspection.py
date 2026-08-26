@@ -32,7 +32,9 @@ class Inspection(Base, UUIDPKMixin, TimestampMixin):
     officer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     product_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("products.id"), nullable=True)
 
-    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    # Nullable: a "manual scan" inspection is started from uploaded/captured
+    # photos alone, with no product listing URL at all.
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     platform: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     status: Mapped[InspectionStatus] = mapped_column(
