@@ -217,11 +217,22 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
                 # Blinkit's product page requires a delivery-location
                 # context a stateless single-shot fetch never provides, and
                 # silently serves its generic app-shell/homepage instead.
-                # Nothing upstream can distinguish that from a real listing,
-                # so it's flagged here (no product_name found via *any*
-                # extraction strategy) with a message an officer can act on,
-                # instead of quietly completing with near-empty results.
-                if not any(c.field_name == "product_name" for c in scraped_product.field_candidates):
+                #
+                # The original check here (no product_name candidate found
+                # via *any* strategy) missed a real recurrence: a follow-up
+                # live test hit the same gated Blinkit homepage, but its
+                # og:title happened to be the site's own generic tagline
+                # ("30,000+ products delivered to your doorstep | Blinkit"),
+                # which the generic OpenGraph strategy dutifully reported as
+                # a product_name candidate — passing this check while still
+                # being zero real product data. A genuinely successful
+                # scrape reliably yields candidates for more than just the
+                # name (manufacturer, quantity, price, ...); requiring at
+                # least one OTHER field alongside product_name is a much
+                # harder signal for a generic homepage to accidentally
+                # satisfy.
+                distinct_fields = {c.field_name for c in scraped_product.field_candidates}
+                if len(distinct_fields) <= 1:
                     _record(
                         db, inspection, PipelineStage.FETCH, PipelineStageStatus.FAILED,
                         "The page was fetched successfully, but no product name/details could be "
