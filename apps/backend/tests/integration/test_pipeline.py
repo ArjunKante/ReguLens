@@ -197,6 +197,91 @@ def test_pipeline_flags_hollow_success_when_fetch_succeeds_with_no_product_data(
     )
 
 
+def test_pipeline_flags_hollow_success_even_when_a_generic_og_title_is_present(
+    db: Session, inspector_user: User, loaded_rules, monkeypatch
+):
+    """Regression on the hollow-success detection itself: a real recurrence
+    of the gated-Blinkit-homepage case had an og:title set to the site's
+    own generic tagline ("30,000+ products delivered to your doorstep |
+    Blinkit"), which the generic OpenGraph strategy dutifully reported as a
+    product_name candidate — satisfying the original "no product_name
+    candidate at all" check while still being zero real product data. Must
+    still be flagged when product_name is the *only* field found."""
+    html = (
+        "<html><head>"
+        '<meta property="og:title" content="30,000+ products delivered to your doorstep | Blinkit">'
+        "</head><body>Nothing product-specific here.</body></html>"
+    )
+    monkeypatch.setattr(
+        "app.services.scraping_service.get_scraper_for_url",
+        lambda u: BlinkitScraper(fetcher=StaticHTMLFetcher(html=html, url=u)),
+    )
+    monkeypatch.setattr(pipeline_module, "download_image", lambda url: None)
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url="https://blinkit.com/prn/some-product/prid/1",
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+
+    db.refresh(inspection)
+    assert inspection.status == InspectionStatus.COMPLETED.value
+    fetch_events = (
+        db.query(PipelineEvent)
+        .filter(PipelineEvent.inspection_id == inspection.id, PipelineEvent.stage == PipelineStage.FETCH.value)
+        .all()
+    )
+    assert any(
+        e.status == "FAILED" and "no product name/details could be extracted" in (e.message or "")
+        for e in fetch_events
+    )
+
+
+def test_pipeline_does_not_flag_a_real_scrape_that_only_found_a_name_and_one_other_field(
+    db: Session, inspector_user: User, loaded_rules, monkeypatch
+):
+    """The other side of the same fix: a real (if partial) scrape that
+    found the product name plus at least one other field must NOT be
+    flagged as hollow."""
+    html = (
+        "<html><head>"
+        '<meta property="og:title" content="Amul Moti Toned Milk (90 Days Shelf Life)">'
+        '<script type="application/ld+json">{"@type":"Product","name":"Amul Moti Toned Milk",'
+        '"manufacturer":{"name":"Amul"}}</script>'
+        "</head><body></body></html>"
+    )
+    monkeypatch.setattr(
+        "app.services.scraping_service.get_scraper_for_url",
+        lambda u: BlinkitScraper(fetcher=StaticHTMLFetcher(html=html, url=u)),
+    )
+    monkeypatch.setattr(pipeline_module, "download_image", lambda url: None)
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url="https://blinkit.com/prn/amul-moti-toned-milk/prid/34778",
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+
+    db.refresh(inspection)
+    assert inspection.status == InspectionStatus.COMPLETED.value
+    fetch_events = (
+        db.query(PipelineEvent)
+        .filter(PipelineEvent.inspection_id == inspection.id, PipelineEvent.stage == PipelineStage.FETCH.value)
+        .all()
+    )
+    assert not any("no product name/details could be extracted" in (e.message or "") for e in fetch_events)
+
+
 def test_pipeline_records_total_duration_as_a_done_stage_event(
     db: Session, inspector_user: User, loaded_rules, monkeypatch
 ):
