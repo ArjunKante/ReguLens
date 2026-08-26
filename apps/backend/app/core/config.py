@@ -13,9 +13,28 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _find_env_file() -> str | None:
+    """Walk up from this file looking for a repo-root .env.
+
+    Locally this file lives at apps/backend/app/core/config.py, four levels
+    below the repo root. Inside the backend Docker image the same file lands
+    at /app/app/core/config.py (the build context is apps/backend, copied to
+    /app), which doesn't have four parent directories and previously made
+    `.parents[4]` raise IndexError before the app could even start. Walking
+    up and returning None when no .env is found lets Docker (which already
+    injects config via real environment variables through docker-compose's
+    `env_file:`) start cleanly without one.
+    """
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / ".env"
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).resolve().parents[4] / ".env"),
+        env_file=_find_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
     )
