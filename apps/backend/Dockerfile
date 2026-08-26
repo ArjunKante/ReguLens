@@ -1,5 +1,11 @@
 # LM-SCAN backend image: FastAPI + Playwright (Chromium) + Tesseract OCR.
-FROM python:3.11-slim
+# Pinned to bookworm (Debian 12), not the rolling `slim` tag: Playwright's
+# --with-deps installer only officially supports Debian 11/12 and Ubuntu
+# 20.04/22.04/24.04. `python:3.11-slim` now resolves to trixie (Debian 13),
+# which isn't in that list and causes --with-deps to fall back to an
+# Ubuntu 20.04 package set that doesn't exist on trixie (missing
+# ttf-ubuntu-font-family / ttf-unifont), failing the build.
+FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
