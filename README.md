@@ -56,7 +56,7 @@ apps/
       reports/       Report rendering (Jinja2 -> HTML/PDF)
       repositories/  DB query helpers
       rules/         Rule seed data, validators, versioning loader
-      scraping/       ProductScraper interface + Generic/Blinkit adapters
+      scraping/       ProductScraper interface + Generic/Blinkit/Amazon/Flipkart adapters
       services/      Pipeline orchestration, glue services
       storage/       Safe file storage
       vision/        Image quality + preprocessing
