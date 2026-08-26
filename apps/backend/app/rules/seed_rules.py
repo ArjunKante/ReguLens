@@ -107,15 +107,51 @@ SEED_RULES: list[SeedRule] = [
         "effective_until": None,
         "notes": (
             "Substituted by G.S.R. 629(E) dated 23 June 2017, in force 1.1.2018. Rule "
-            "6(1)(aa) itself is imported-products-only; separately, for an *online listing* "
-            "specifically, government e-commerce policy (DPIIT's June 2020 direction to "
-            "e-commerce entities) has since required country-of-origin display for "
-            "domestically-sourced listings too, and this remains standard marketplace "
-            "practice as of 2026 — the validator therefore also checks for a declared "
-            "country of origin on domestic-product online listings, but reports its absence "
-            "there as NEEDS_MANUAL_REVIEW (an e-commerce-policy observation), never as a "
-            "POTENTIAL_NON_COMPLIANCE finding against Rule 6(1)(aa) itself, which does not "
-            "require it for a domestic product."
+            "6(1)(aa) itself is imported-products-only and package-level (\"mentioned on the "
+            "package\") -- it does not extend to domestic products or to an e-commerce-specific "
+            "display duty. The separate, distinctly-numbered 2026 e-commerce country-of-origin "
+            "requirement is Rule 6(10A) -- see LMPC-R6-10A-COO-FILTER below; it is also "
+            "imported-products-only, so there is no domestic-product gap for this rule to cover."
+        ),
+    },
+    {
+        "rule_key": "LMPC-R6-10A-COO-FILTER",
+        "rule_reference": "Rule 6(10A)",
+        "title": "Searchable/sortable country-of-origin filter for imported products (e-commerce)",
+        "description": (
+            "E-commerce entities selling imported products must provide a searchable and "
+            "sortable country-of-origin filter on the product listing/platform."
+        ),
+        "requirement": (
+            "Every e-commerce entity offering for sale any imported product shall ensure "
+            "that the product listing contains a searchable and sortable filter specifying "
+            "the country of origin."
+        ),
+        "applicability": "E-commerce listings of imported products only (not domestic products, not physical-package-only inspections).",
+        "exceptions": "Not applicable to domestically manufactured products, or to inspections with no online listing.",
+        "validation_type": "CROSS_FIELD_CHECK",
+        "severity": "MAJOR",
+        "validator_config": {"handler": "coo_searchable_filter_gate"},
+        "source_document": (
+            "Legal Metrology (Packaged Commodities) Amendment Rules, 2026 (G.S.R. 128(E), "
+            "13 Feb 2026); Legal Metrology (Packaged Commodities) Second Amendment Rules, "
+            "2026 (G.S.R. 312(E), 27 Apr 2026)"
+        ),
+        "source_locator": "Rule 6(10A)",
+        "effective_from": "2026-07-01",
+        "effective_until": None,
+        "notes": (
+            "Inserted by G.S.R. 128(E) dated 13 Feb 2026, in force 1 Jul 2026 (already in "
+            "force). Further amended by the Second Amendment Rules, 2026 -- G.S.R. 312(E) "
+            "dated 27 Apr 2026 -- with that provision in force 1 Jul 2027 (not yet in force; "
+            "re-verify this rule's text against the gazette once that date passes). Distinct "
+            "from Rule 6(1)(aa): 6(1)(aa) requires the country of origin to be mentioned on "
+            "the package itself; 6(10A) additionally requires the *e-commerce platform* to "
+            "provide a searchable/sortable filter by country of origin. LM-SCAN can only "
+            "verify the declaration prerequisite (is country of origin extractable from the "
+            "listing at all) from a scraped page -- it cannot verify the platform's "
+            "interactive filter widget -- so this rule never asserts a confident PASS on the "
+            "full 6(10A) obligation; see coo_searchable_filter_gate's docstring."
         ),
     },
     {

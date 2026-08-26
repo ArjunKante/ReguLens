@@ -254,45 +254,76 @@ def _country_of_origin_gate(config: dict, ctx: InspectionContext) -> ValidationO
             confidence=0.3,
         )
     if ctx.origin_status == "DOMESTIC":
-        if not ctx.web_pages:
-            return ValidationOutcome(
-                status=ComplianceStatus.NOT_APPLICABLE,
-                reason="This product was identified as domestically manufactured (no importer declared); country-of-origin declaration is not applicable under Rule 6(1)(aa).",
-                confidence=0.6,
-            )
-        # Rule 6(1)(aa) itself is imported-only, but for an *online listing*
-        # specifically, government e-commerce policy (in force since the
-        # Department for Promotion of Industry and Internal Trade's June
-        # 2020 direction to e-commerce entities, and still the operating
-        # practice on Indian marketplaces as of 2026) has separately
-        # required country-of-origin to be shown for domestically-sourced
-        # listings too, not only imported ones. That is a platform/policy
-        # expectation, not itself a citation to the Legal Metrology
-        # (Packaged Commodities) Rules, 2011 — worded and confidence-capped
-        # accordingly, and never escalated to POTENTIAL_NON_COMPLIANCE the
-        # way an actual Rule 6(1)(aa) gap would be (P0 audit fix: "current
-        # e-commerce country-of-origin requirement").
-        if ctx.has_value(F.COUNTRY_OF_ORIGIN):
-            return ValidationOutcome(
-                status=ComplianceStatus.PASS,
-                reason="Country of origin is declared on this listing (not strictly required by Rule 6(1)(aa) for a domestic product, but consistent with current e-commerce country-of-origin display practice).",
-                confidence=round(ctx.best(F.COUNTRY_OF_ORIGIN).confidence, 2),  # type: ignore[union-attr]
-                checked_fields=[F.COUNTRY_OF_ORIGIN],
-                evidence=_evidence_for(ctx, F.COUNTRY_OF_ORIGIN),
-            )
+        # Rule 6(1)(aa) is strictly imported-products-only — confirmed
+        # against the current gazette record while researching the 2026
+        # amendment below; there is no broader "all products" extension of
+        # 6(1)(aa) itself. (An earlier version of this handler speculated
+        # that e-commerce policy broadened this for online listings of
+        # domestic products too, citing a general 2020 DPIIT direction —
+        # that citation could not be verified precisely and has been
+        # removed. The real, citable 2026 e-commerce country-of-origin
+        # requirement is Rule 6(10A), which is also imported-products-only
+        # — see `_coo_searchable_filter_gate` below — so there was no
+        # domestic-product gap to cover in the first place.)
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="This product was identified as domestically manufactured (no importer declared); country-of-origin declaration is not applicable under Rule 6(1)(aa).",
+            confidence=0.6,
+        )
+    return presence_check({"require_any_group": [[F.COUNTRY_OF_ORIGIN]]}, ctx)
+
+
+def _coo_searchable_filter_gate(config: dict, ctx: InspectionContext) -> ValidationOutcome:
+    """Rule 6(10A) — inserted by the Legal Metrology (Packaged Commodities)
+    Amendment Rules, 2026 (G.S.R. 128(E), 13 Feb 2026, in force 1 Jul 2026;
+    further amended by the Second Amendment Rules, 2026 — G.S.R. 312(E),
+    27 Apr 2026, that provision in force 1 Jul 2027). Distinct from Rule
+    6(1)(aa): 6(1)(aa) requires country-of-origin to be *mentioned on the
+    package*; 6(10A) additionally requires every e-commerce entity selling
+    an imported product to provide a *searchable and sortable filter* for
+    country of origin on the listing/platform — imported products only,
+    never extended to domestic products by this rule.
+
+    LM-SCAN can verify a *necessary but not sufficient* precondition for
+    6(10A) from a fetched listing page: whether country of origin is
+    declared/extractable on the listing at all. It cannot verify the
+    platform-level searchable/sortable filter widget itself — that is an
+    interactive UI feature, not page content a generic scraper can assess
+    — so this never reports a confident PASS on the full 6(10A) obligation,
+    only on its declaration prerequisite, worded accordingly (Section 46:
+    never assert more than the evidence supports).
+    """
+    if ctx.origin_status != "IMPORTED":
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="Rule 6(10A) applies only to e-commerce listings of imported products; this product was not identified as imported.",
+            confidence=0.6,
+        )
+    if not ctx.web_pages:
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="Rule 6(10A) applies to e-commerce listings specifically; this is a manual/photo-only inspection with no online listing.",
+            confidence=0.85,
+        )
+    if ctx.has_value(F.COUNTRY_OF_ORIGIN):
         return ValidationOutcome(
             status=ComplianceStatus.NEEDS_MANUAL_REVIEW,
             reason=(
-                "Not required by Rule 6(1)(aa) for a domestically manufactured product, but "
-                "current e-commerce country-of-origin display practice (in effect since "
-                "DPIIT's June 2020 direction to e-commerce entities) expects it on the listing "
-                "regardless of import status; not found here, so flagged for officer awareness "
-                "rather than as a Rules violation."
+                "Country of origin is declared on this imported product's listing, satisfying "
+                "Rule 6(10A)'s declaration prerequisite — but LM-SCAN cannot verify from page "
+                "content whether the platform also provides the searchable and sortable "
+                "country-of-origin filter Rule 6(10A) requires; an officer should confirm the "
+                "filter itself is present on the platform."
             ),
-            confidence=0.4,
+            confidence=0.5,
             checked_fields=[F.COUNTRY_OF_ORIGIN],
+            evidence=_evidence_for(ctx, F.COUNTRY_OF_ORIGIN),
         )
-    return presence_check({"require_any_group": [[F.COUNTRY_OF_ORIGIN]]}, ctx)
+    return _absence_outcome(
+        ctx,
+        [F.COUNTRY_OF_ORIGIN],
+        "This product was identified as imported, but no country-of-origin declaration was found on the listing — Rule 6(10A) requires imported products to be identifiable by country of origin (via a searchable/sortable filter) on e-commerce listings.",
+    )
 
 
 def _consumer_care_check(config: dict, ctx: InspectionContext) -> ValidationOutcome:
@@ -450,6 +481,7 @@ def _small_package_exemption_gate(config: dict, ctx: InspectionContext) -> Valid
 
 _CROSS_FIELD_HANDLERS = {
     "country_of_origin_gate": _country_of_origin_gate,
+    "coo_searchable_filter_gate": _coo_searchable_filter_gate,
     "consumer_care_check": _consumer_care_check,
     "ecommerce_display_aggregate": _ecommerce_display_aggregate,
     "when_packed_phrase": _when_packed_phrase,

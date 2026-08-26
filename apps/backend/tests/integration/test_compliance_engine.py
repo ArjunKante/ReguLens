@@ -149,21 +149,60 @@ def test_best_before_not_applicable_for_household_category(db: Session, inspecto
     assert check.status == ComplianceStatus.NOT_APPLICABLE.value
 
 
-def test_country_of_origin_needs_review_when_domestic_online_listing_omits_it(db: Session, inspector_user: User, loaded_rules):
-    """A domestic product's *online listing* (a WebPage was fetched) with no
-    declared country of origin is not a Rule 6(1)(aa) violation (that rule
-    is imported-only), but current e-commerce country-of-origin display
-    practice still expects it — so this is NEEDS_MANUAL_REVIEW, not a
-    blanket NOT_APPLICABLE (P0 audit fix: "current e-commerce
-    country-of-origin requirement"; see also
-    test_country_of_origin_not_applicable_for_domestic_physical_only_inspection
-    for the case that IS still NOT_APPLICABLE)."""
+def test_country_of_origin_not_applicable_for_domestic_online_listing(db: Session, inspector_user: User, loaded_rules):
+    """A domestic product's online listing with no declared country of
+    origin is NOT_APPLICABLE under Rule 6(1)(aa), which is strictly
+    imported-products-only and does not extend to domestic products (an
+    earlier version of this test/handler speculated a broader e-commerce
+    policy obligation here, citing a general 2020 DPIIT direction that
+    could not be precisely verified; that speculation has been removed —
+    see LMPC-R6-10A-COO-FILTER for the real, precisely-cited 2026
+    e-commerce country-of-origin requirement, which is *also*
+    imported-products-only)."""
     inspection = _inspection(db, inspector_user)
     wp = _webpage(db, inspection)
     _declare(db, inspection, wp, "manufacturer_name", "Local Foods Pvt Ltd")
     checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
     check = _check_for(checks, db, "LMPC-R6-1AA-COUNTRY-ORIGIN")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_coo_filter_rule_not_applicable_for_domestic_product(db: Session, inspector_user: User, loaded_rules):
+    """Rule 6(10A) (2026 e-commerce country-of-origin filter requirement)
+    is imported-products-only, same as Rule 6(1)(aa) -- a domestic product
+    must not be flagged under it."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "manufacturer_name", "Local Foods Pvt Ltd")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R6-10A-COO-FILTER")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_coo_filter_rule_flags_missing_declaration_for_imported_product(db: Session, inspector_user: User, loaded_rules):
+    """An imported product's online listing with no country-of-origin
+    declaration at all fails Rule 6(10A)'s declaration prerequisite."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "importer_name", "Global Traders Pvt Ltd")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R6-10A-COO-FILTER")
+    assert check.status in (ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value, ComplianceStatus.NEEDS_MANUAL_REVIEW.value)
+
+
+def test_coo_filter_rule_needs_review_when_declared_but_filter_unverifiable(db: Session, inspector_user: User, loaded_rules):
+    """Even with country of origin declared for an imported product's
+    listing, Rule 6(10A) also requires an actual searchable/sortable filter
+    on the platform -- something LM-SCAN cannot verify from page content,
+    so this must never claim a confident PASS on the rule."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "importer_name", "Global Traders Pvt Ltd")
+    _declare(db, inspection, wp, "country_of_origin", "China")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R6-10A-COO-FILTER")
     assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+    assert check.status != ComplianceStatus.PASS.value
 
 
 def test_country_of_origin_not_applicable_for_domestic_physical_only_inspection(db: Session, inspector_user: User, loaded_rules):
@@ -294,6 +333,128 @@ def test_missing_mrp_with_partial_low_quality_evidence_needs_manual_review(db: S
     checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
     mrp_check = _check_for(checks, db, "LMPC-R6-1E-MRP")
     assert mrp_check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_mfg_date_passes_when_a_date_like_value_is_declared(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "mfg_date", "07/2024")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1D-MFG-DATE")
+    assert check.status == ComplianceStatus.PASS.value
+
+
+def test_consumer_care_passes_with_name_and_phone(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "consumer_care_name", "Acme Consumer Care")
+    _declare(db, inspection, wp, "consumer_care_phone", "1800-22-4020")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-2-CONSUMER-CARE")
+    assert check.status == ComplianceStatus.PASS.value
+
+
+def test_unit_sale_price_is_always_routed_for_manual_review(db: Session, inspector_user: User, loaded_rules):
+    """MANUAL_REVIEW_CHECK: Rule 6(11) requires an arithmetic relationship
+    (RSP / net quantity in the standard unit) that this V1 regex/keyword
+    engine cannot itself verify, so it is always routed to an officer
+    rather than auto-passed or auto-flagged (never a naive presence check)."""
+    inspection = _inspection(db, inspector_user)
+    _webpage(db, inspection)
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-11-UNIT-SALE-PRICE")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_manner_of_declaration_is_always_routed_for_manual_review(db: Session, inspector_user: User, loaded_rules):
+    """MANUAL_REVIEW_CHECK: legibility/prominence/script correctness (Rule
+    9) is a visual judgment call this engine does not attempt to automate."""
+    inspection = _inspection(db, inspector_user)
+    _webpage(db, inspection)
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R9-MANNER")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_name_address_form_passes_with_a_pin_coded_address(db: Session, inspector_user: User, loaded_rules):
+    """P0 audit fix follow-through: manufacturer_address is now actually
+    extractable (see test_patterns.py), so this rule can PASS instead of
+    being permanently unsatisfiable."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "manufacturer_address", "DLF Qutab Enclave, Gurugram - 122002, Haryana")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R10-NAME-ADDR-FORM")
+    assert check.status == ComplianceStatus.PASS.value
+
+
+def test_when_packed_qualifier_is_flagged_as_potential_non_compliance(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "net_quantity", "200g when packed", normalized="200g")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R11-QTY-BASIS")
+    assert check.status == ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
+    assert "when packed" in check.reason.lower()
+
+
+def _assert_consistency_mismatch_flagged(
+    db: Session, inspector_user: User, *, field: str, online_value: str, image_value: str, rule_key: str, normalized_online: str | None = None, normalized_image: str | None = None,
+) -> None:
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, field, online_value, normalized=normalized_online)
+    image = ProductImage(
+        inspection_id=inspection.id, source_type="ONLINE_LISTING", storage_path="consistency.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc),
+    )
+    db.add(image)
+    db.flush()
+    db.add(Declaration(
+        inspection_id=inspection.id, field_name=field, value=image_value, normalized_value=normalized_image,
+        source_type=DeclarationSourceType.IMAGE_OCR.value, source_product_image_id=image.id,
+        confidence=0.8, extracted_at=dt.datetime.now(dt.timezone.utc),
+    ))
+    db.commit()
+
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, rule_key)
+    assert check.status == ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
+
+
+def test_net_quantity_inconsistency_between_listing_and_image_is_flagged(db: Session, inspector_user: User, loaded_rules):
+    _assert_consistency_mismatch_flagged(
+        db, inspector_user, field="net_quantity", online_value="200g", image_value="150g",
+        normalized_online="200g", normalized_image="150g", rule_key="LMSCAN-CONSISTENCY-NET-QUANTITY",
+    )
+
+
+def test_product_name_inconsistency_between_listing_and_image_is_flagged(db: Session, inspector_user: User, loaded_rules):
+    _assert_consistency_mismatch_flagged(
+        db, inspector_user, field="product_name", online_value="Acme Choco Bar", image_value="Zenith Vanilla Wafers",
+        rule_key="LMSCAN-CONSISTENCY-PRODUCT-NAME",
+    )
+
+
+def test_manufacturer_inconsistency_between_listing_and_image_is_flagged(db: Session, inspector_user: User, loaded_rules):
+    _assert_consistency_mismatch_flagged(
+        db, inspector_user, field="manufacturer_name", online_value="Acme Foods Pvt Ltd", image_value="Totally Different Co Ltd",
+        rule_key="LMSCAN-CONSISTENCY-MANUFACTURER",
+    )
+
+
+def test_importer_inconsistency_between_listing_and_image_is_flagged(db: Session, inspector_user: User, loaded_rules):
+    _assert_consistency_mismatch_flagged(
+        db, inspector_user, field="importer_name", online_value="Global Traders Pvt Ltd", image_value="Some Other Importer LLP",
+        rule_key="LMSCAN-CONSISTENCY-IMPORTER",
+    )
+
+
+def test_country_of_origin_inconsistency_between_listing_and_image_is_flagged(db: Session, inspector_user: User, loaded_rules):
+    _assert_consistency_mismatch_flagged(
+        db, inspector_user, field="country_of_origin", online_value="India", image_value="China",
+        rule_key="LMSCAN-CONSISTENCY-COUNTRY-ORIGIN",
+    )
 
 
 def test_overall_status_prioritizes_potential_non_compliance():
