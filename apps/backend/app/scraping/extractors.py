@@ -180,10 +180,19 @@ def extract_bullet_label_value_pairs(soup: BeautifulSoup, selectors: list[str]) 
 
 # Label keyword -> our field vocabulary (app/rules/fields.py). Matched by
 # substring on the lowercased label, in order, so a more specific label
-# (e.g. "net weight") should be listed before a more generic one it also
-# contains. Deliberately conservative: a label with no match here is simply
-# dropped rather than guessed at, per Section 7 ("do not fabricate a
-# declaration the page didn't actually make").
+# exact label (lowercased, stripped) required — NOT substring matching.
+# Live-verified bug: a real Amazon.in listing has a detail-bullets row "Is
+# Discontinued By Manufacturer : No", which a substring check for
+# "manufacturer" wrongly read as a manufacturer_name declaration with value
+# "No". Every real label confirmed live so far ("Manufacturer", "Country of
+# Origin", "Quantity", "MRP", "Marketed By", "Expiry") is a short, bare
+# phrase, never a compound sentence containing the keyword — so exact
+# matching (with multiple listed synonyms per field to cover wording
+# variants) catches every confirmed real case while refusing to guess at
+# labels that merely mention the keyword in passing. Deliberately
+# conservative: a label with no match here is simply dropped rather than
+# guessed at, per Section 7 ("do not fabricate a declaration the page
+# didn't actually make").
 SPEC_LABEL_FIELD_MAP: list[tuple[str, str]] = [
     ("country of origin", F.COUNTRY_OF_ORIGIN),
     ("net quantity", F.NET_QUANTITY),
@@ -193,6 +202,8 @@ SPEC_LABEL_FIELD_MAP: list[tuple[str, str]] = [
     ("m.r.p", F.MRP),
     ("mrp", F.MRP),
     ("manufacturer", F.MANUFACTURER_NAME),
+    ("manufacturer name", F.MANUFACTURER_NAME),
+    ("manufactured by", F.MANUFACTURER_NAME),
     ("packed by", F.PACKER_NAME),
     ("packer", F.PACKER_NAME),
     ("imported by", F.IMPORTER_NAME),
@@ -229,8 +240,8 @@ def field_candidates_from_label_value_pairs(
     for label, value in pairs:
         if not value:
             continue
-        label_lower = label.lower()
-        field_name = next((field for key, field in SPEC_LABEL_FIELD_MAP if key in label_lower), None)
+        label_lower = label.strip().lower()
+        field_name = next((field for key, field in SPEC_LABEL_FIELD_MAP if key == label_lower), None)
         if field_name is None:
             continue
         candidates.append(
