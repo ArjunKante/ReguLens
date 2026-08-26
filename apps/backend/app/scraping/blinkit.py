@@ -13,7 +13,7 @@ import logging
 
 from bs4 import BeautifulSoup
 
-from app.scraping.base import GenericProductPageScraper
+from app.scraping.base import GenericProductPageScraper, hostname_matches
 from app.scraping.data import ExtractionStrategyName, FieldExtraction, ScrapedProduct
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class BlinkitScraper(GenericProductPageScraper):
     platform_name = "blinkit"
 
     def can_handle(self, url: str) -> bool:
-        return "blinkit.com" in url.lower()
+        return hostname_matches(url, "blinkit.com")
 
     def extract_product_data(self, html: str, url: str) -> ScrapedProduct:
         product = super().extract_product_data(html, url)

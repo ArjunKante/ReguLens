@@ -14,6 +14,7 @@ import httpx
 from protego import Protego
 
 from app.core.config import get_settings
+from app.scraping.url_safety import UnsafeURLError, ensure_safe_to_fetch
 
 settings = get_settings()
 
@@ -33,20 +34,34 @@ def get_robots_parser(url: str, timeout: float = 10.0) -> Protego | None:
 
     robots_url = urllib.parse.urljoin(domain, "/robots.txt")
     try:
+        ensure_safe_to_fetch(robots_url)
         response = httpx.get(
             robots_url,
             timeout=timeout,
             headers={"User-Agent": settings.scraper_user_agent},
-            follow_redirects=True,
+            # Not followed automatically: a redirect target must pass the
+            # same safety check as the original URL, not be trusted blindly
+            # (SSRF protection — see app.scraping.url_safety).
+            follow_redirects=False,
         )
+        if response.is_redirect:
+            location = response.headers.get("location")
+            if location:
+                redirect_url = str(httpx.URL(robots_url).join(location))
+                ensure_safe_to_fetch(redirect_url)
+                response = httpx.get(
+                    redirect_url, timeout=timeout, headers={"User-Agent": settings.scraper_user_agent},
+                    follow_redirects=False,
+                )
         if response.status_code >= 400:
             # No robots.txt (or inaccessible) is conventionally treated as "allow all".
             parser = Protego.parse("")
         else:
             parser = Protego.parse(response.text)
-    except httpx.HTTPError:
-        # Network failure while checking robots.txt: fail closed on the side of
-        # NOT scraping rather than assuming permission (Section 4).
+    except (httpx.HTTPError, UnsafeURLError):
+        # Network failure (or an unsafe redirect target) while checking
+        # robots.txt: fail closed on the side of NOT scraping rather than
+        # assuming permission (Section 4).
         return None
 
     _robots_cache[domain] = parser

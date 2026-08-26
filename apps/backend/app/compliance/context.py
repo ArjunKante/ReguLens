@@ -5,10 +5,21 @@ data-driven)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from app.models.declaration import Declaration
 from app.models.scraping import OCRResult, ProductImage, WebPage
 from app.models.enums import WebFetchStatus
+
+# Country-of-origin gating needs three states, not two (P0 audit fix:
+# "imported/domestic/unknown classification"). The previous `is_imported:
+# bool` collapsed "we positively found manufacturer evidence and no
+# importer" and "we found no evidence about origin at all" into the same
+# `False` — which then let `_country_of_origin_gate` report a confident
+# NOT_APPLICABLE ("this is a domestic product") for an inspection that
+# actually had no evidence to determine that from at all, e.g. a page fetch
+# that failed with zero declarations extracted.
+OriginStatus = Literal["IMPORTED", "DOMESTIC", "UNKNOWN"]
 
 
 @dataclass
@@ -18,7 +29,7 @@ class InspectionContext:
     images: list[ProductImage]
     ocr_results: list[OCRResult]
     is_tobacco_product: bool = False
-    is_imported: bool = False
+    origin_status: OriginStatus = "UNKNOWN"
 
     _by_field: dict[str, list[Declaration]] = field(default_factory=dict, init=False, repr=False)
 
@@ -87,7 +98,23 @@ class InspectionContext:
 
         avg_ocr = self.average_ocr_confidence
         weight_total += 1.0
-        score += avg_ocr if avg_ocr is not None else 0.5
+        if avg_ocr is not None:
+            score += avg_ocr
+        elif self.has_any_images:
+            # Images were supplied but OCR produced no text at all (engine
+            # failure, blank/corrupt image, unsupported format, ...). This
+            # is a genuine evidence gap, not a neutral "unknown" — treating
+            # it as a middling 0.5 (P0 audit fix: "failed OCR doesn't
+            # become automatic non-compliance") could previously combine
+            # with the `has_any_images` term above to land the overall
+            # score exactly at 0.5, which `_absence_outcome` treats as
+            # "not low quality" and confidently reports
+            # POTENTIAL_NON_COMPLIANCE — i.e. a total OCR failure could
+            # silently turn into an asserted violation instead of a
+            # NEEDS_MANUAL_REVIEW/UNABLE_TO_VERIFY.
+            score += 0.15
+        else:
+            score += 0.5
 
         return score / weight_total if weight_total else 0.0
 

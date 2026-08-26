@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.models.enums import EvidenceSourceType
 from app.models.scraping import OCRResult, ProductImage
 from app.ocr.registry import get_ocr_engine
+from app.scraping.url_safety import UnsafeURLError, ensure_safe_to_fetch
 from app.storage.files import UnsafeUploadError, read_bytes, save_image_bytes
 from app.vision.image_quality import assess_quality
 from app.vision.preprocessing import preprocess_for_ocr
@@ -139,31 +140,53 @@ def run_ocr_for_image(db: Session, product_image: ProductImage) -> int:
     return after - before
 
 
+_MAX_IMAGE_REDIRECTS = 5
+
+
 def download_image(url: str) -> tuple[bytes, str | None] | None:
     """Downloads a product image referenced by the scraper. Returns
     (content_bytes, content_type) or None if the download failed/was
-    rejected — download failures never crash the pipeline (Section 26)."""
+    rejected — download failures never crash the pipeline (Section 26).
+
+    An image URL comes straight out of a fetched page's HTML — i.e. from
+    content the target marketplace (or, if compromised, an attacker)
+    controls — so it gets the same SSRF protection as the page fetch
+    itself: the host is validated before every request, and redirects are
+    followed manually (not via httpx's `follow_redirects=True`, which does
+    not re-validate anything) so a Location header can't be used to reach
+    an internal address after the initial URL passed validation."""
     try:
-        with httpx.stream(
-            "GET",
-            url,
-            timeout=settings.scraper_request_timeout_seconds,
-            headers={"User-Agent": settings.scraper_user_agent},
-            follow_redirects=True,
-        ) as response:
-            if response.status_code >= 400:
-                logger.info("Image download failed (%s) for %s", response.status_code, url)
-                return None
-            content_type = response.headers.get("content-type")
-            chunks: list[bytes] = []
-            total = 0
-            for chunk in response.iter_bytes():
-                total += len(chunk)
-                if total > MAX_DOWNLOAD_BYTES:
-                    logger.warning("Image download exceeded size limit for %s", url)
+        current_url = url
+        for _ in range(_MAX_IMAGE_REDIRECTS + 1):
+            ensure_safe_to_fetch(current_url)
+            with httpx.stream(
+                "GET",
+                current_url,
+                timeout=settings.scraper_request_timeout_seconds,
+                headers={"User-Agent": settings.scraper_user_agent},
+                follow_redirects=False,
+            ) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        return None
+                    current_url = str(httpx.URL(current_url).join(location))
+                    continue
+                if response.status_code >= 400:
+                    logger.info("Image download failed (%s) for %s", response.status_code, url)
                     return None
-                chunks.append(chunk)
-            return b"".join(chunks), content_type
-    except (httpx.HTTPError, UnsafeUploadError) as exc:
+                content_type = response.headers.get("content-type")
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > MAX_DOWNLOAD_BYTES:
+                        logger.warning("Image download exceeded size limit for %s", url)
+                        return None
+                    chunks.append(chunk)
+                return b"".join(chunks), content_type
+        logger.info("Image download exceeded redirect limit for %s", url)
+        return None
+    except (httpx.HTTPError, UnsafeUploadError, UnsafeURLError) as exc:
         logger.info("Image download error for %s: %s", url, exc)
         return None

@@ -73,7 +73,8 @@ report generator — only new rows in `seed_rules.py`.
 - **Reference:** Rule 6(1)(aa), inserted/substituted by G.S.R. 629(E) dated 23 June 2017 (in force 1.1.2018).
 - **Source text:** "The name of the country of origin or manufacture or assembly in case of imported products shall be mentioned on the package."
 - **Applicability:** Only when the product is identified (from listing text/images) as imported, or an importer name/address is present without a domestic manufacturer.
-- **Validation type:** `CROSS_FIELD_CHECK` — if `importer` is present/declared and `country_of_origin` is absent → issue; if product is not identified as imported, rule is `NOT_APPLICABLE`.
+- **Validation type:** `CROSS_FIELD_CHECK` — if `importer` is present/declared and `country_of_origin` is absent → issue; if the product is positively identified as domestic (a manufacturer/packer was found and no importer), rule is `NOT_APPLICABLE` for a physical-package-only inspection; if origin cannot be determined at all (no evidence retrieved), the check is `UNABLE_TO_VERIFY` rather than assumed domestic.
+- **2026 e-commerce update:** Rule 6(1)(aa) itself remains imported-products-only, but for an *online listing* specifically, current e-commerce policy/practice (per DPIIT's June 2020 direction to e-commerce entities, still standard marketplace practice as of 2026) expects country-of-origin display regardless of import status. For a domestic product with an online listing, the validator checks for a declared country of origin and reports its absence as `NEEDS_MANUAL_REVIEW` (an e-commerce-policy observation) — never as `POTENTIAL_NON_COMPLIANCE` against Rule 6(1)(aa), which does not require it for a domestic product.
 - **Severity:** MAJOR.
 
 ### LMPC-R6-1B-GENERIC-NAME — Common/generic name of commodity

@@ -28,7 +28,7 @@ import logging
 
 from bs4 import BeautifulSoup
 
-from app.scraping.base import GenericProductPageScraper
+from app.scraping.base import GenericProductPageScraper, hostname_matches
 from app.scraping.data import ExtractionStrategyName, FieldExtraction, ScrapedProduct
 from app.scraping.extractors import extract_table_label_value_pairs, field_candidates_from_label_value_pairs
 
@@ -45,7 +45,7 @@ class FlipkartScraper(GenericProductPageScraper):
     platform_name = "flipkart"
 
     def can_handle(self, url: str) -> bool:
-        return "flipkart.com" in url.lower()
+        return hostname_matches(url, "flipkart.com")
 
     def extract_product_data(self, html: str, url: str) -> ScrapedProduct:
         product = super().extract_product_data(html, url)

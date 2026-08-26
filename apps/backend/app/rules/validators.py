@@ -238,11 +238,59 @@ def manual_review_check(config: dict, ctx: InspectionContext) -> ValidationOutco
 
 
 def _country_of_origin_gate(config: dict, ctx: InspectionContext) -> ValidationOutcome:
-    if not ctx.is_imported:
+    if ctx.origin_status == "UNKNOWN":
+        # Absence of an importer declaration only means "domestic" if we
+        # actually looked and found manufacturer/packer evidence instead —
+        # with no evidence at all (failed fetch, no images, nothing
+        # extracted), it must not be reported as a confident NOT_APPLICABLE
+        # (P0 audit fix: "imported/domestic/unknown classification").
         return ValidationOutcome(
-            status=ComplianceStatus.NOT_APPLICABLE,
-            reason="No importer was identified for this listing; country-of-origin declaration is not applicable to domestically manufactured products.",
-            confidence=0.6,
+            status=ComplianceStatus.UNABLE_TO_VERIFY,
+            reason=(
+                "Neither an importer nor a manufacturer/packer could be identified for this "
+                "inspection, so whether this product is domestic or imported (and therefore "
+                "whether Rule 6(1)(aa) applies) cannot be determined from the available evidence."
+            ),
+            confidence=0.3,
+        )
+    if ctx.origin_status == "DOMESTIC":
+        if not ctx.web_pages:
+            return ValidationOutcome(
+                status=ComplianceStatus.NOT_APPLICABLE,
+                reason="This product was identified as domestically manufactured (no importer declared); country-of-origin declaration is not applicable under Rule 6(1)(aa).",
+                confidence=0.6,
+            )
+        # Rule 6(1)(aa) itself is imported-only, but for an *online listing*
+        # specifically, government e-commerce policy (in force since the
+        # Department for Promotion of Industry and Internal Trade's June
+        # 2020 direction to e-commerce entities, and still the operating
+        # practice on Indian marketplaces as of 2026) has separately
+        # required country-of-origin to be shown for domestically-sourced
+        # listings too, not only imported ones. That is a platform/policy
+        # expectation, not itself a citation to the Legal Metrology
+        # (Packaged Commodities) Rules, 2011 — worded and confidence-capped
+        # accordingly, and never escalated to POTENTIAL_NON_COMPLIANCE the
+        # way an actual Rule 6(1)(aa) gap would be (P0 audit fix: "current
+        # e-commerce country-of-origin requirement").
+        if ctx.has_value(F.COUNTRY_OF_ORIGIN):
+            return ValidationOutcome(
+                status=ComplianceStatus.PASS,
+                reason="Country of origin is declared on this listing (not strictly required by Rule 6(1)(aa) for a domestic product, but consistent with current e-commerce country-of-origin display practice).",
+                confidence=round(ctx.best(F.COUNTRY_OF_ORIGIN).confidence, 2),  # type: ignore[union-attr]
+                checked_fields=[F.COUNTRY_OF_ORIGIN],
+                evidence=_evidence_for(ctx, F.COUNTRY_OF_ORIGIN),
+            )
+        return ValidationOutcome(
+            status=ComplianceStatus.NEEDS_MANUAL_REVIEW,
+            reason=(
+                "Not required by Rule 6(1)(aa) for a domestically manufactured product, but "
+                "current e-commerce country-of-origin display practice (in effect since "
+                "DPIIT's June 2020 direction to e-commerce entities) expects it on the listing "
+                "regardless of import status; not found here, so flagged for officer awareness "
+                "rather than as a Rules violation."
+            ),
+            confidence=0.4,
+            checked_fields=[F.COUNTRY_OF_ORIGIN],
         )
     return presence_check({"require_any_group": [[F.COUNTRY_OF_ORIGIN]]}, ctx)
 
@@ -283,6 +331,24 @@ def _consumer_care_check(config: dict, ctx: InspectionContext) -> ValidationOutc
 
 
 def _ecommerce_display_aggregate(config: dict, ctx: InspectionContext) -> ValidationOutcome:
+    if not ctx.web_pages:
+        # Rule 6(10) requires declarations on "the digital and electronic
+        # network used for e-commerce transactions" — i.e. it only has
+        # something to say about an actual online listing. A manual/
+        # photo-only inspection (no source_url, so no WebPage was ever
+        # fetched) is inspecting a physical package directly, not an online
+        # listing, so there is no digital listing for this rule to apply to
+        # (P0 audit fix: "online vs physical rule applicability" — this
+        # previously fell through to the same absence-based scoring as an
+        # online listing missing its declarations, so a manual scan could
+        # be flagged for not displaying declarations "on the digital and
+        # electronic network" it never had in the first place).
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="This is a manual/photo-only inspection with no online listing page; Rule 6(10)'s e-commerce display duty applies to declarations shown on a digital listing, which does not exist here.",
+            confidence=0.9,
+        )
+
     missing_groups: list[list[str]] = []
     all_fields: list[str] = []
     evidence: list[EvidenceRef] = []
