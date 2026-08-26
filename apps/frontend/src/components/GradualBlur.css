@@ -1,0 +1,44 @@
+/* The source material splits these rules between a real CSS file and a
+   runtime style-injection function (document.createElement('style')...).
+   Consolidated here into one real stylesheet instead — same rules, no
+   runtime DOM injection, consistent with how this project ports every
+   other reference component. */
+
+.gradual-blur {
+  isolation: isolate;
+  pointer-events: none;
+  transition: opacity 0.3s ease-out;
+}
+
+.gradual-blur-parent {
+  overflow: hidden;
+}
+
+.gradual-blur-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.gradual-blur-inner > div {
+  -webkit-backdrop-filter: inherit;
+  backdrop-filter: inherit;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .gradual-blur-inner > div {
+    background: rgba(0, 0, 0, 0.3);
+    opacity: 0.5;
+  }
+}
+
+.gradual-blur-fixed {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1000;
+}
