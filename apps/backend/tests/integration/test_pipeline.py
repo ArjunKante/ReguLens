@@ -71,6 +71,41 @@ def test_full_pipeline_runs_all_stages_and_produces_compliance_checks(
     assert len(checks) >= 14  # at least the LMPC rules; consistency rules mostly UNABLE_TO_VERIFY (no images)
 
 
+def test_pipeline_handles_manual_scan_with_no_source_url(db: Session, inspector_user: User, loaded_rules, monkeypatch):
+    """A "manual scan" inspection (started from uploaded/captured photos
+    alone, never given a listing URL — the new direct entry point, not just
+    the post-failure fallback) must run the pipeline to completion without
+    ever attempting a fetch."""
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError(f"scrape_product_page should never be called for a manual scan (args={args!r})")
+
+    monkeypatch.setattr(pipeline_module, "scrape_product_page", _fail_if_called)
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url=None,
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+
+    db.refresh(inspection)
+    assert inspection.status == InspectionStatus.COMPLETED.value
+    assert inspection.overall_status is not None
+    assert inspection.product_id is None  # no listing was ever fetched, so no Product to link
+
+    fetch_events = (
+        db.query(PipelineEvent)
+        .filter(PipelineEvent.inspection_id == inspection.id, PipelineEvent.stage == PipelineStage.FETCH.value)
+        .all()
+    )
+    assert any("no listing url" in (e.message or "").lower() for e in fetch_events)
+
+
 def test_pipeline_handles_fetch_failure_gracefully(db: Session, inspector_user: User, loaded_rules, monkeypatch):
     """Section 25/26: a failed fetch must not crash the pipeline or leave
     the inspection stuck — it should complete with UNABLE_TO_VERIFY-heavy

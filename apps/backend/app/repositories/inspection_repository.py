@@ -20,7 +20,7 @@ def generate_inspection_number() -> str:
     return f"LMSCAN-{today}-{suffix}"
 
 
-def create_inspection(db: Session, *, officer: User, source_url: str, notes: str | None) -> Inspection:
+def create_inspection(db: Session, *, officer: User, source_url: str | None, notes: str | None) -> Inspection:
     inspection = Inspection(
         inspection_number=generate_inspection_number(),
         officer_id=officer.id,

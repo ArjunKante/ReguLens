@@ -33,6 +33,23 @@ export function NewInspectionPage() {
     }
   }
 
+  // No listing URL at all — the officer inspects entirely from photos they
+  // take/upload themselves. Deliberately skips scanUrl(): there is nothing
+  // to fetch, and the inspection detail page's upload card (which already
+  // exists for the "automatic fetch failed" case) is now reachable directly
+  // from here instead of only after a failed URL scan.
+  async function handleManualScan() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const inspection = await createInspection(undefined, notes || undefined);
+      navigate(`/inspections/${inspection.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start manual inspection.");
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div>
       <h1>New Online Inspection</h1>
@@ -58,6 +75,17 @@ export function NewInspectionPage() {
                 Detected platform: <strong>{detectedPlatform}</strong>
               </p>
             )}
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 6 }}>
+              Don't have a URL?{" "}
+              <button
+                type="button"
+                onClick={handleManualScan}
+                disabled={submitting}
+                style={{ fontSize: 12, padding: 0, border: "none", background: "none", color: "var(--color-primary)", textDecoration: "underline", cursor: "pointer" }}
+              >
+                Scan manually — take or upload photos instead
+              </button>
+            </p>
           </div>
           <div className="form-row">
             <label htmlFor="notes">Notes (optional)</label>
@@ -77,7 +105,8 @@ export function NewInspectionPage() {
           protection, or robots.txt). If that happens, the inspection page will show{" "}
           <em>"Automatic page extraction unavailable"</em> and let you upload screenshots instead —
           the analysis pipeline (OCR, declaration extraction, compliance checks) runs the same way
-          either way.
+          either way. Or skip straight to that by using "Scan manually" above if you never had a
+          URL to begin with.
         </p>
       </div>
     </div>

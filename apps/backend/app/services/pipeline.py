@@ -119,23 +119,35 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
     scraped_product = None
 
     with _stage(db, inspection, PipelineStage.FETCH, "Fetching product page…"):
-        web_page, scraped_product = scrape_product_page(db, inspection, inspection.source_url)
-        inspection.platform = web_page.platform
+        if inspection.source_url:
+            web_page, scraped_product = scrape_product_page(db, inspection, inspection.source_url)
+            inspection.platform = web_page.platform
 
-        if scraped_product is not None:
-            product = get_or_create_product(db, inspection.source_url, web_page.platform)
-            product.title = scraped_product.title or product.title
-            product.brand = scraped_product.brand or product.brand
-            product.description = scraped_product.description or product.description
-            product.listed_price = scraped_product.listed_price or product.listed_price
-            product.currency = scraped_product.currency or product.currency or "INR"
-            inspection.product_id = product.id
-            touch_last_checked(db, product)
-            db.commit()
-        elif web_page.fetch_status != WebFetchStatus.SUCCESS.value:
+            if scraped_product is not None:
+                product = get_or_create_product(db, inspection.source_url, web_page.platform)
+                product.title = scraped_product.title or product.title
+                product.brand = scraped_product.brand or product.brand
+                product.description = scraped_product.description or product.description
+                product.listed_price = scraped_product.listed_price or product.listed_price
+                product.currency = scraped_product.currency or product.currency or "INR"
+                inspection.product_id = product.id
+                touch_last_checked(db, product)
+                db.commit()
+            elif web_page.fetch_status != WebFetchStatus.SUCCESS.value:
+                _record(
+                    db, inspection, PipelineStage.FETCH, PipelineStageStatus.FAILED,
+                    "Automatic page extraction unavailable. Upload screenshots to continue this inspection.",
+                )
+        else:
+            # Manual scan: no listing URL was ever provided, so there is
+            # nothing to fetch — this is not a failure, just a different
+            # entry point. Evidence comes entirely from uploaded/captured
+            # screenshots (Section 5/25's "upload instead" fallback, now
+            # also reachable directly rather than only after a failed
+            # automatic fetch).
             _record(
-                db, inspection, PipelineStage.FETCH, PipelineStageStatus.FAILED,
-                "Automatic page extraction unavailable. Upload screenshots to continue this inspection.",
+                db, inspection, PipelineStage.FETCH, PipelineStageStatus.SUCCEEDED,
+                "Manual inspection — no listing URL provided; skipped automatic retrieval, relying on uploaded screenshots.",
             )
 
     with _stage(db, inspection, PipelineStage.PARSE, "Parsing structured page data…"):

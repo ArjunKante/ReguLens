@@ -9,7 +9,12 @@ from app.models.enums import ComplianceStatus, InspectionStatus, PipelineStage, 
 
 
 class InspectionCreate(BaseModel):
-    source_url: str = Field(min_length=8, description="Product listing URL to inspect")
+    # Optional: omit (or send null) to start a "manual scan" inspection —
+    # evidence comes entirely from uploaded/captured photos, with no
+    # marketplace listing to fetch. When provided, still must look like a
+    # real URL (min_length enforced only on an actual value — Pydantic
+    # doesn't run str constraints against None in an Optional field).
+    source_url: str | None = Field(default=None, min_length=8, description="Product listing URL to inspect (omit for a manual, photo-only scan)")
     notes: str | None = None
 
 
@@ -18,7 +23,7 @@ class InspectionSummary(BaseModel):
 
     id: uuid.UUID
     inspection_number: str
-    source_url: str
+    source_url: str | None
     platform: str | None
     status: InspectionStatus
     overall_status: ComplianceStatus | None

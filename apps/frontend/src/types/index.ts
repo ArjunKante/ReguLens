@@ -50,7 +50,7 @@ export interface LoginResponse {
 export interface InspectionSummary {
   id: string;
   inspection_number: string;
-  source_url: string;
+  source_url: string | null;
   platform: string | null;
   status: InspectionStatus;
   overall_status: ComplianceStatus | null;
