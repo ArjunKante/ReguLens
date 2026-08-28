@@ -32,6 +32,14 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-lmscan}:${POSTGRES_PASSWORD:-change-me-locally}@postgres:5432/${POSTGRES_DB:-lmscan}
+      # Explicitly overridden (not just left to env_file: .env below) so a
+      # DATABASE_URL_UNPOOLED pulled from `neon env pull` for the cloud
+      # deployment can never leak into this local container — alembic
+      # prefers this variable over DATABASE_URL when set (see
+      # alembic/env.py), and local Postgres has no pooled/unpooled split,
+      # so it must always match DATABASE_URL here, never silently fall
+      # through to whatever's in .env.
+      DATABASE_URL_UNPOOLED: postgresql+psycopg://${POSTGRES_USER:-lmscan}:${POSTGRES_PASSWORD:-change-me-locally}@postgres:5432/${POSTGRES_DB:-lmscan}
       STORAGE_ROOT: /app/storage
       # Override any host-specific TESSERACT_CMD from .env (e.g. a Windows path) —
       # the container has its own Linux tesseract-ocr installed via apt.
