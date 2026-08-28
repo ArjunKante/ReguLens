@@ -246,6 +246,28 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .image-grid .image-tile { border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 11px; text-align: left; background: #fafbfc; }
 
+/* "Continue on phone" QR modal (components/MobileAccessQR.tsx). */
+.qr-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 40;
+}
+.qr-modal { width: min(320px, 100%); text-align: center; margin-bottom: 0; }
+.qr-modal__code {
+  display: flex;
+  justify-content: center;
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 12px 0;
+}
+.qr-modal__code canvas { max-width: 100%; height: auto; }
+
 /* ==========================================================================
    Mobile navigation (phone-width top bar + slide-in drawer)
 

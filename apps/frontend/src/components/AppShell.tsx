@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import LineSidebar from "./LineSidebar";
+import { MobileAccessQR } from "./MobileAccessQR";
 
 interface NavItem {
   label: string;
@@ -105,6 +106,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="sidebar__user">
           <div>{user?.fullName}</div>
           <div style={{ opacity: 0.7 }}>{user?.role}</div>
+          <div style={{ marginTop: 8 }}>
+            <MobileAccessQR />
+          </div>
           <button className="secondary" onClick={logout} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.4)" }}>
             Log out
           </button>
