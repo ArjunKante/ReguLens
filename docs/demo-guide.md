@@ -89,7 +89,7 @@ docstring):
 
 1. Log in as `admin@lmscan.demo`.
 2. **User Management** — create a new user with any role.
-3. **Rule Management** — browse all 20 rules (14 legal + 6 consistency),
+3. **Rule Management** — browse all 25 rules (19 legal + 6 consistency),
    expand one to see its full requirement text, applicability, exceptions,
    and source citation.
 4. Via `/docs` (Swagger UI), demonstrate `PUT /rules/{rule_key}` updating a
