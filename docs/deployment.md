@@ -83,12 +83,25 @@ concern, rather than a single VM:
     host) without a platform-specific Start Command, and `$PORT` expands
     to whatever Render assigns dynamically (falls back to 8000 when unset,
     e.g. a bare `docker run`).
-  - **Known risk, not yet hit in practice**: the image bundles Playwright
-    Chromium for scraping. Render's free tier is 512MB RAM — launching
-    headless Chromium alongside Tesseract OCR under memory pressure can be
-    flaky. Manual photo-scan/OCR-only flows are unaffected; automatic URL
-    scraping might be occasionally unreliable. Fix, if it becomes a real
-    problem, is a paid instance bump, not a re-architecture.
+  - **Tested against a real live listing (2026-08-28)**: a full run
+    against a real Amazon.in product page — Playwright launching Chromium,
+    fetch, image download, Tesseract OCR, declaration extraction,
+    classification, all 21 compliance rules, consistency checks — reached
+    `COMPLETED` with real findings (correct rule citations, 60% average
+    OCR confidence, evidence quality score 0.87). So the earlier memory
+    concern (512MB RAM alongside headless Chromium + Tesseract) did not
+    materialize as a hard failure. What *did* show up: it took **220
+    seconds** end to end (a local run completes in well under a minute),
+    and the backend's single free-tier CPU was saturated enough during
+    Tesseract OCR that *other* requests to the same process — including
+    the frontend's status-polling GET, and even a fresh page load's
+    initial fetch — stalled or hit a proxy-level "Failed to fetch" until
+    OCR finished. Reloading the page afterward showed the correct
+    completed result; the pipeline itself (a server-side background task)
+    was never at risk, only the responsiveness of concurrent requests
+    during the CPU-heavy window. Fine for a single officer's occasional
+    use; would need a paid instance (real CPU allocation, not memory) to
+    stay responsive if several inspections ran around the same time.
   - `STORAGE_ROOT` (uploaded images, generated reports) is on Render's
     free-tier ephemeral disk — wiped on redeploy/restart. Known gap, not
     yet fixed; Neon Object Storage is the identified fix (see the
