@@ -185,6 +185,32 @@ export interface InspectionDetail extends InspectionSummary {
   pipeline_duration_ms: number | null;
 }
 
+export type BatchStatus = "CREATED" | "IN_PROGRESS" | "COMPLETED";
+
+export interface BatchItemSummary extends InspectionSummary {
+  violation_count: number;
+  critical_violation_count: number;
+  max_violation_confidence: number;
+}
+
+export interface BatchSummary {
+  id: string;
+  name: string | null;
+  status: BatchStatus;
+  total_count: number;
+  processed_count: number;
+  outcome_counts: Record<string, number>;
+  created_by_id: string;
+  created_by_name: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface BatchDetail extends BatchSummary {
+  items: BatchItemSummary[];
+  rejected_urls: string[];
+}
+
 export interface DashboardStatistics {
   total_online_inspections: number;
   passed: number;

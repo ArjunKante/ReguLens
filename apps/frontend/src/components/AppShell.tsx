@@ -38,6 +38,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (user?.role === "ADMIN" || user?.role === "INSPECTOR") {
       items.push({ label: "New Inspection", path: "/inspections/new" });
     }
+    items.push({ label: "Batch Scan", path: "/batches" });
     items.push({ label: "Rule Management", path: "/rules" });
     if (user?.role === "ADMIN") {
       items.push({ label: "User Management", path: "/users" });

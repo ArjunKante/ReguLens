@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     ocr_engine: str = "tesseract"
     tesseract_cmd: str = "tesseract"
 
+    # --- Batch scan ---
+    # V1's in-process BackgroundTasks worker (no Celery/RQ yet, see
+    # docs/limitations.md) makes an unbounded batch a real risk of tying up
+    # the process for a long time, so batches are capped and run with
+    # bounded concurrency rather than all at once.
+    batch_max_urls: int = 50
+    batch_max_concurrency: int = 3
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]

@@ -34,6 +34,17 @@ async function request<T>(
 
   const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
 
+  if (response.status === 401 && !options.skipAuth) {
+    // The token was rejected (expired, invalid, or the backend's
+    // JWT_SECRET_KEY changed under it, e.g. a container restart) — every
+    // protected page was otherwise stuck showing a raw "Could not validate
+    // credentials" error forever, because ProtectedRoute only checks the
+    // cached user-profile blob in localStorage, not whether the token
+    // itself still works. AuthContext listens for this event and clears
+    // the stale session, which sends ProtectedRoute back to /login.
+    window.dispatchEvent(new Event("lmscan:unauthorized"));
+  }
+
   if (!response.ok) {
     let detail: unknown = null;
     try {

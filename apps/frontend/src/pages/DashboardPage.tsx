@@ -105,7 +105,7 @@ export function DashboardPage() {
           <tbody>
             {recent.map((i) => (
               <tr key={i.id}>
-                <td>
+                <td className="nowrap">
                   <Link to={`/inspections/${i.id}`}>{i.inspection_number}</Link>
                   {i.is_demo && (
                     <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 999, background: "#7c3aed", color: "#fff" }}>

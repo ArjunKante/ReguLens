@@ -22,7 +22,13 @@ def generate_inspection_number() -> str:
 
 
 def create_inspection(
-    db: Session, *, officer: User, source_url: str | None, notes: str | None, is_demo: bool = False
+    db: Session,
+    *,
+    officer: User,
+    source_url: str | None,
+    notes: str | None,
+    is_demo: bool = False,
+    batch_id: uuid.UUID | None = None,
 ) -> Inspection:
     inspection = Inspection(
         inspection_number=generate_inspection_number(),
@@ -30,6 +36,7 @@ def create_inspection(
         source_url=source_url,
         notes=notes,
         is_demo=is_demo,
+        batch_id=batch_id,
     )
     db.add(inspection)
     db.commit()

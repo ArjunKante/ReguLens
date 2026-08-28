@@ -3,6 +3,7 @@ populated (required for string-based relationship() references to resolve,
 and for Alembic autogenerate to see every table)."""
 from app.core.database import Base  # noqa: F401
 from app.models.audit import AuditLog  # noqa: F401
+from app.models.batch import InspectionBatch  # noqa: F401
 from app.models.compliance import ComplianceCheck, Evidence, Violation  # noqa: F401
 from app.models.declaration import Declaration  # noqa: F401
 from app.models.inspection import Inspection, InspectionSource, PipelineEvent  # noqa: F401
@@ -16,6 +17,7 @@ from app.models.user import Role, User  # noqa: F401
 __all__ = [
     "Base",
     "AuditLog",
+    "InspectionBatch",
     "ComplianceCheck",
     "Evidence",
     "Violation",
