@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import LineSidebar from "./LineSidebar";
@@ -29,6 +29,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // LineSidebar's proximity/hover effect is a desktop mouse thing — on a
+  // narrow (phone-width) viewport the sidebar itself is hidden by CSS in
+  // favor of this plain drawer, which is just tappable buttons, no motion
+  // gimmicks needed. Kept as separate markup from LineSidebar rather than
+  // trying to make one component serve both, since LineSidebar's animation
+  // math assumes a mouse.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // A route change (including via the drawer's own links) always closes
+  // the drawer — otherwise it stays open over the new page until the user
+  // notices and taps the backdrop themselves.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   const navItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [
@@ -95,6 +110,50 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
+
+      {/* Phone-width nav: a top bar + slide-in drawer, CSS-hidden on wider
+          screens where the real sidebar above is visible instead. */}
+      <header className="mobile-topbar">
+        <button
+          type="button"
+          className="mobile-topbar__toggle"
+          aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={mobileNavOpen}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+        <span className="mobile-topbar__brand">LM-SCAN</span>
+      </header>
+      {mobileNavOpen && <div className="mobile-drawer__backdrop" onClick={() => setMobileNavOpen(false)} />}
+      <nav className={`mobile-drawer${mobileNavOpen ? " mobile-drawer--open" : ""}`}>
+        <div className="sidebar__brand">
+          LM-SCAN
+          <small>Legal Metrology Compliance Inspection</small>
+        </div>
+        <div className="mobile-drawer__nav">
+          {navItems.map((item, index) => (
+            <button
+              key={item.path}
+              type="button"
+              className={`mobile-drawer__link${index === activeIndex ? " mobile-drawer__link--active" : ""}`}
+              onClick={() => navigate(item.path)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="sidebar__user">
+          <div>{user?.fullName}</div>
+          <div style={{ opacity: 0.7 }}>{user?.role}</div>
+          <button className="secondary" onClick={logout} style={{ color: "#fff", borderColor: "rgba(255,255,255,0.4)" }}>
+            Log out
+          </button>
+        </div>
+      </nav>
+
       <main className="main">{children}</main>
     </div>
   );

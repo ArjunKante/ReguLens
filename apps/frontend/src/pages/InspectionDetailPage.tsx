@@ -260,7 +260,7 @@ export function InspectionDetailPage() {
                   initialSelectedIndex={null}
                   renderItem={(check: ComplianceCheck) => (
                     <div className={`card check-card status-${check.status}`}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
                         <strong>{check.rule.title}</strong>
                         <ConfidenceBar confidence={check.confidence} />
                       </div>
