@@ -93,11 +93,25 @@ concern, rather than a single VM:
     free-tier ephemeral disk — wiped on redeploy/restart. Known gap, not
     yet fixed; Neon Object Storage is the identified fix (see the
     Cloud-deployment-vs-region note above), not yet implemented.
-- **Vercel** — the frontend (static Vite build). Not yet deployed as of
-  this writing; `VITE_API_BASE_URL` needs to point at Render's URL once
-  it exists, and Render's `CORS_ALLOWED_ORIGINS` needs Vercel's domain
-  added once *that* exists — a one-time chicken-and-egg step on first
-  deploy of each side.
+- **Vercel** — the frontend, replacing the `frontend` Compose service
+  (multi-stage Vite build + nginx). Root Directory is set to
+  `apps/frontend` in the Vercel project settings (this is a monorepo;
+  Vercel's Vite framework preset auto-detects the build command
+  `npm run build` and output dir `dist` from `package.json` once pointed
+  there). `apps/frontend/vercel.json` adds a catch-all rewrite to
+  `index.html` — this is Vercel's equivalent of nginx.conf's
+  `try_files $uri $uri/ /index.html` in the Compose setup, needed so a
+  hard refresh on a client-side route (e.g. `/inspections/{id}`) doesn't
+  404 instead of loading the SPA.
+  - `VITE_API_BASE_URL` is set as a Vercel Environment Variable (Vite
+    bakes it in at *build* time, not runtime, so it must be set before
+    the first deploy) to Render's URL + `/api/v1`, e.g.
+    `https://lmscan-backend.onrender.com/api/v1`.
+  - Chicken-and-egg on first deploy of each side: Render's
+    `CORS_ALLOWED_ORIGINS` needs Vercel's domain, but Vercel doesn't hand
+    out that domain until its first deploy — deploy Vercel first to learn
+    the domain, then go back and update `CORS_ALLOWED_ORIGINS` on Render
+    (triggers an automatic redeploy).
 
 ## What's NOT provided (be aware before treating this as production-ready)
 
