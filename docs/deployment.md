@@ -62,11 +62,19 @@ concern, rather than a single VM:
   - Migrations always run against `DATABASE_URL_UNPOOLED` (direct, not
     pooled) — see the `neon-postgres` skill's pooled-vs-direct gotcha
     (pooled connections don't support the session-level operations
-    migrations rely on).
+    migrations rely on). Wired into the app, not just a convention to
+    remember: `Settings.database_url_unpooled` (optional — `None` for a
+    plain single-endpoint Postgres with no pooled/unpooled split, e.g.
+    local Docker Compose) and `alembic/env.py` prefers it over
+    `database_url` when set. The app's own SQLAlchemy engine
+    (`core/database.py`) always uses the regular pooled `database_url` —
+    only the one-off migration step at container start needs the direct
+    connection.
 - **Render** — the backend, replacing the `backend` Compose service.
   Deploy via `render.yaml` at the repo root (Render's "New Blueprint"
   flow) rather than clicking through every field by hand. `DATABASE_URL`,
-  `JWT_SECRET_KEY`, and `CORS_ALLOWED_ORIGINS` are `sync: false` in that
+  `DATABASE_URL_UNPOOLED`, `JWT_SECRET_KEY`, and `CORS_ALLOWED_ORIGINS`
+  are `sync: false` in that
   file — real secrets, entered in the Render dashboard, never committed.
   - The Dockerfile's `CMD` now runs `alembic upgrade head && python -m
     app.rules.loader && uvicorn ... --port ${PORT:-8000}` unconditionally

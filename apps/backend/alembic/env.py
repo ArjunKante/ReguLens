@@ -14,7 +14,12 @@ from app.models import Base  # noqa: E402
 
 config = context.config
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Direct/unpooled when available (Neon: DATABASE_URL_UNPOOLED) — migrations
+# need session-level behavior a pooled/PgBouncer connection doesn't
+# guarantee. Falls back to the regular database_url for a plain
+# single-endpoint Postgres (local Docker Compose, etc.) with no
+# pooled/unpooled distinction. See Settings.database_url_unpooled.
+config.set_main_option("sqlalchemy.url", settings.database_url_unpooled or settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

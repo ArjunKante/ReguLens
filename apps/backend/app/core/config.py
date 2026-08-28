@@ -47,6 +47,15 @@ class Settings(BaseSettings):
 
     # --- Database ---
     database_url: str = "postgresql+psycopg://lmscan:lmscan@localhost:5432/lmscan"
+    # Neon-specific: the pooled connection (hostname with -pooler) routes
+    # through PgBouncer in transaction mode, which doesn't support the
+    # session-level behavior schema migrations can rely on — Neon's own
+    # guidance is to run migrations over the direct/unpooled connection
+    # instead (see alembic/env.py). Optional and unused against a plain
+    # single-endpoint Postgres (local Docker Compose, etc.) that has no
+    # pooled/unpooled distinction — alembic/env.py falls back to
+    # `database_url` when this is unset.
+    database_url_unpooled: str | None = None
 
     # --- Auth ---
     jwt_secret_key: str = "insecure-dev-secret-change-me"

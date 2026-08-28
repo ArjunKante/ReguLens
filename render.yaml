@@ -21,6 +21,11 @@ services:
       # --- Secrets: Render prompts for these at deploy time, never stored here ---
       - key: DATABASE_URL
         sync: false
+      # Direct/unpooled connection — used only for `alembic upgrade head` at
+      # container start (see alembic/env.py). Neon's pooled connection
+      # doesn't support the session-level behavior migrations rely on.
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
       - key: JWT_SECRET_KEY
         sync: false
       # Vercel doesn't hand out its final URL until the frontend's first
