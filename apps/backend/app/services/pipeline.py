@@ -35,6 +35,7 @@ from app.models.enums import (
     WebFetchStatus,
 )
 from app.models.inspection import Inspection, PipelineEvent
+from app.models.review import ReviewDecision
 from app.models.scraping import OCRResult, ProductImage, WebExtraction, WebPage
 from app.demo_fixtures import list_demo_image_paths
 from app.nlp.declaration_extractor import extract_declarations_from_ocr, extract_declarations_from_webpage
@@ -139,6 +140,24 @@ def _reset_derived_data_for_reanalysis(db: Session, inspection: Inspection) -> N
     OCRResult rows); their declarations are still recomputed fresh below,
     since DECLARATION_EXTRACTION re-derives declarations from whatever
     OCRResult/WebExtraction rows exist at the time it runs.
+
+    ComplianceCheck has three ORM cascade="all, delete-orphan" children —
+    Violation, Evidence, and ReviewDecision (models/compliance.py,
+    models/review.py) — but the bulk `.delete()` calls below bypass the ORM
+    entirely (Session.query().delete() never triggers Python-level
+    cascades, only whatever a table's actual DB foreign key specifies), so
+    each child has to be deleted explicitly to actually honor what the ORM
+    already declares. ReviewDecision was originally missed here: any
+    inspection with a reviewed finding made every subsequent re-analysis
+    crash outright on review_decisions_compliance_check_id_fkey (found
+    recovering a corrupted local database, not hypothetical) and left the
+    inspection stuck IN_PROGRESS forever, since the failed transaction rolled
+    back before the pipeline could even mark it FAILED. Deleting the review
+    alongside its check loses no durable record — submit_review() already
+    writes the actual audit trail (reviewer, decision, timestamp) to
+    audit_logs via log_action() at submission time; ReviewDecision itself is
+    working state for the review UI, scoped to the specific automated
+    finding it was made against, same as Evidence/Violation.
     """
     check_ids = [
         row[0] for row in db.query(ComplianceCheck.id).filter(ComplianceCheck.inspection_id == inspection.id)
@@ -146,6 +165,7 @@ def _reset_derived_data_for_reanalysis(db: Session, inspection: Inspection) -> N
     if check_ids:
         db.query(Evidence).filter(Evidence.compliance_check_id.in_(check_ids)).delete(synchronize_session=False)
         db.query(Violation).filter(Violation.compliance_check_id.in_(check_ids)).delete(synchronize_session=False)
+        db.query(ReviewDecision).filter(ReviewDecision.compliance_check_id.in_(check_ids)).delete(synchronize_session=False)
         db.query(ComplianceCheck).filter(ComplianceCheck.id.in_(check_ids)).delete(synchronize_session=False)
 
     db.query(Declaration).filter(

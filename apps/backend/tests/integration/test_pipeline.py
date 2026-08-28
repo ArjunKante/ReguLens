@@ -3,6 +3,7 @@ using a static HTML fixture instead of a live network/Playwright call (per
 Section 36, live scraping is never exercised by the normal test suite)."""
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from pathlib import Path
 
@@ -11,8 +12,9 @@ from sqlalchemy.orm import Session
 
 from app.models.compliance import ComplianceCheck
 from app.models.declaration import Declaration
-from app.models.enums import ComplianceStatus, InspectionStatus, PipelineStage
+from app.models.enums import ComplianceStatus, InspectionStatus, PipelineStage, ReviewDecisionType
 from app.models.inspection import Inspection, PipelineEvent
+from app.models.review import ReviewDecision
 from app.models.scraping import WebPage
 from app.models.user import User
 from app.rules.loader import load_rules
@@ -153,6 +155,69 @@ def test_reanalysis_does_not_duplicate_declarations_or_compliance_checks(
     assert second_check_count == first_check_count
     assert second_webpage_count == first_webpage_count == 1
     assert inspection.status == InspectionStatus.COMPLETED.value
+
+
+def test_reanalysis_of_a_reviewed_inspection_does_not_crash(
+    db: Session, inspector_user: User, loaded_rules, monkeypatch
+):
+    """Bug found recovering a corrupted local database (not hypothetical):
+    an inspection with a human ReviewDecision (Section 16) on one of its
+    ComplianceCheck rows crashed every subsequent re-analysis outright on
+    review_decisions_compliance_check_id_fkey — _reset_derived_data_for_reanalysis
+    bulk-deletes ComplianceCheck's other two cascade="all, delete-orphan"
+    children (Violation, Evidence) before deleting the check itself, but had
+    forgotten the third (ReviewDecision), so the DB rejected the delete. The
+    failed transaction rolled back before the pipeline could even mark the
+    inspection FAILED, leaving it stuck IN_PROGRESS forever."""
+    html = (FIXTURES / "success_listing.html").read_text(encoding="utf-8")
+    url = "https://blinkit.com/prn/tasty-munch/prid/12345"
+
+    monkeypatch.setattr(
+        "app.services.scraping_service.get_scraper_for_url",
+        lambda u: BlinkitScraper(fetcher=StaticHTMLFetcher(html=html, url=u)),
+    )
+    monkeypatch.setattr(pipeline_module, "download_image", lambda url: None)
+
+    inspection = Inspection(
+        inspection_number=f"LMSCAN-{uuid.uuid4().hex[:8].upper()}",
+        officer_id=inspector_user.id,
+        source_url=url,
+        platform=None,
+    )
+    db.add(inspection)
+    db.commit()
+    db.refresh(inspection)
+
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+    db.refresh(inspection)
+    check = db.query(ComplianceCheck).filter(ComplianceCheck.inspection_id == inspection.id).first()
+    assert check is not None
+    # Captured now, not read off `check` after reanalysis: the reviewed
+    # check is legitimately deleted and replaced below (that's the whole
+    # point of the fix), so `check` itself becomes a stale ORM reference to
+    # a since-deleted row — touching it post-reanalysis would raise
+    # ObjectDeletedError on its own account, unrelated to what this test
+    # is actually verifying.
+    reviewed_check_id = check.id
+
+    review = ReviewDecision(
+        compliance_check_id=reviewed_check_id,
+        reviewer_id=inspector_user.id,
+        decision=ReviewDecisionType.CONFIRM.value,
+        automated_status=check.status,
+        final_status=check.status,
+        created_at=dt.datetime.now(dt.timezone.utc),
+    )
+    db.add(review)
+    db.commit()
+
+    # Must not raise — this is exactly the FK violation that used to crash here.
+    pipeline_module.run_inspection_pipeline(db, inspection.id)
+    db.refresh(inspection)
+
+    assert inspection.status == InspectionStatus.COMPLETED.value
+    assert db.query(ReviewDecision).filter(ReviewDecision.compliance_check_id == reviewed_check_id).count() == 0
+    assert db.query(ComplianceCheck).filter(ComplianceCheck.id == reviewed_check_id).count() == 0
 
 
 def test_pipeline_flags_hollow_success_when_fetch_succeeds_with_no_product_data(
