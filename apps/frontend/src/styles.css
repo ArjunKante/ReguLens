@@ -71,6 +71,13 @@ h3 { font-size: 14px; margin: 16px 0 8px 0; }
   box-shadow: var(--shadow);
   padding: 16px 20px;
   margin-bottom: 16px;
+  /* Every data table on the site lives inside a .card. Rather than patch
+     each table's page individually, scrolling the card horizontally when
+     its content (the table) is wider than the phone screen keeps every
+     column reachable instead of the table forcing the whole page to
+     scroll sideways. A no-op on non-table cards, since they never
+     overflow their own width. */
+  overflow-x: auto;
 }
 
 .disclaimer-banner {
@@ -189,7 +196,10 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
   min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-bg);
   padding: 48px 24px;
 }
-.login-card { width: 360px; background: #fff; border-radius: var(--radius); padding: 32px; box-shadow: var(--shadow); }
+/* min(), not a fixed 360px: a phone narrower than 360px (still common,
+   e.g. a 320px-wide device) would otherwise force the whole page to
+   scroll horizontally just to show the login card. */
+.login-card { width: min(360px, 100%); background: #fff; border-radius: var(--radius); padding: 32px; box-shadow: var(--shadow); }
 .login-card h1 { text-align: center; color: var(--color-primary); }
 .login-card p.tagline { text-align: center; color: var(--color-text-muted); font-size: 12.5px; margin-bottom: 24px; }
 .error-text { color: var(--status-violation); font-size: 12.5px; margin-top: 8px; }
@@ -235,3 +245,97 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
    legible, not just present. */
 .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .image-grid .image-tile { border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 11px; text-align: left; background: #fafbfc; }
+
+/* ==========================================================================
+   Mobile navigation (phone-width top bar + slide-in drawer)
+
+   Hidden by default (desktop shows the real .sidebar instead); the
+   breakpoint below both reveals these and hides .sidebar so exactly one
+   nav UI is visible at a time. See AppShell.tsx for the markup/state.
+   ========================================================================== */
+.mobile-topbar { display: none; }
+.mobile-drawer__backdrop { display: none; }
+.mobile-drawer { display: none; }
+
+.mobile-topbar {
+  align-items: center;
+  gap: 12px;
+  background: var(--color-primary-dark);
+  color: #fff;
+  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.mobile-topbar__brand { font-weight: 700; font-size: 16px; }
+.mobile-topbar__toggle {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.mobile-topbar__toggle span { display: block; height: 2px; background: #fff; border-radius: 1px; }
+
+.mobile-drawer__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 29;
+}
+
+.mobile-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(280px, 82vw);
+  background: var(--color-primary-dark);
+  color: #e8ecf3;
+  padding: 20px 0;
+  z-index: 30;
+  flex-direction: column;
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+}
+.mobile-drawer--open { transform: translateX(0); }
+.mobile-drawer__nav { display: flex; flex-direction: column; padding: 12px 12px 4px; gap: 2px; }
+.mobile-drawer__link {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #c8d2e0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  cursor: pointer;
+}
+.mobile-drawer__link:hover { background: rgba(255, 255, 255, 0.08); }
+.mobile-drawer__link--active { background: rgba(91, 157, 255, 0.18); color: #fff; font-weight: 600; }
+
+@media (max-width: 880px) {
+  .sidebar { display: none; }
+  .mobile-topbar { display: flex; }
+  .mobile-drawer__backdrop { display: block; }
+  .mobile-drawer { display: flex; }
+
+  .app-shell { flex-direction: column; }
+  .main { padding: 16px; max-width: 100%; }
+
+  /* Filter/action rows and stat tiles already wrap via flex-wrap/auto-fit;
+     table font/padding just needs to shrink a bit so more columns fit
+     before the .card's horizontal scroll (added above) has to kick in. */
+  table { font-size: 12px; }
+  th, td { padding: 6px 8px; }
+
+  .hero__content h1 { font-size: 30px; }
+  .hero__tagline { font-size: 14px; }
+  .login-shell { padding: 24px 16px; }
+  .login-card { padding: 24px; }
+}
