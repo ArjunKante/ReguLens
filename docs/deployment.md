@@ -102,6 +102,31 @@ concern, rather than a single VM:
     during the CPU-heavy window. Fine for a single officer's occasional
     use; would need a paid instance (real CPU allocation, not memory) to
     stay responsive if several inspections ran around the same time.
+  - **Batch scan (`batch_max_concurrency`, default 3) tested the same
+    day and does not hold up on the free tier.** A batch of 3 real
+    Amazon.in listings was still at 0/3 processed after 8+ minutes — well
+    past the 220s a single scan takes, and past even the ~11 minutes 3
+    single scans would take run one after another with no concurrency at
+    all. Concurrent Chromium launches and concurrent Tesseract processes
+    don't run 3x faster on a fractional core; they contend for the same
+    sliver of CPU, so each item individually slows down rather than
+    finishing in parallel. Along the way the same process also handed
+    back a genuine `401` that logged the browser session out (not a
+    network failure — a real rejected token), most likely the auth
+    dependency's own DB lookup timing out under the same CPU/connection
+    pressure. **Separately, and worth fixing regardless of tier**: the
+    first attempt at this test was silently killed mid-run by an
+    unrelated `git push` triggering a Render auto-deploy — the new
+    container has no memory of the old one's in-flight
+    `ThreadPoolExecutor` threads, so the batch (and any in-progress
+    single inspection) is orphaned at `IN_PROGRESS` forever with no
+    error, no retry, and no way to tell from the UI that it will never
+    finish. Neither the pipeline nor the batch runner currently guards
+    against this. Batch scan should be treated as **not usable on the
+    free tier today** — a paid instance (CPU, not memory) is the fix for
+    the throughput problem; the orphaned-on-redeploy problem needs its
+    own fix (a startup reconciliation pass that marks any `IN_PROGRESS`
+    row FAILED if it belongs to a now-dead process) independent of tier.
   - `STORAGE_ROOT` (uploaded images, generated reports) is on Render's
     free-tier ephemeral disk — wiped on redeploy/restart. Known gap, not
     yet fixed; Neon Object Storage is the identified fix (see the
