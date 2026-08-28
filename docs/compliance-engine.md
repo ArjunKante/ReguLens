@@ -40,6 +40,18 @@ order:
    - 0.5 or above → `POTENTIAL_NON_COMPLIANCE` ("If MRP is clearly absent
      in a high-quality complete listing → POTENTIAL_NON_COMPLIANCE").
 
+A fetch that HTTP-succeeded but retrieved nothing real (`WebPage.hollow`,
+set by `services/pipeline.py`'s hollow-success detection — e.g. Blinkit
+serving its generic app-shell homepage instead of the listing because a
+stateless fetch never provides the delivery-location context the real page
+needs) does **not** count as a successful fetch for either of the two
+questions above (`InspectionContext.webpage_fetch_succeeded` excludes
+hollow pages). Before this, a hollow "success" looked identical to a
+genuinely complete scrape to this scoring, so a marketplace blocking/gating
+the real page turned into confident `POTENTIAL_NON_COMPLIANCE` findings
+against data that was never actually retrieved — found by live-testing real
+Blinkit/Amazon listings, not a hypothetical.
+
 `NOT_APPLICABLE` is decided *before* any validator runs, by category gating
 (`RuleVersion.applicable_categories` / `excluded_categories`, e.g.
 best-before-date only applies to `FOOD`) and by the Rule 26(a) small-package

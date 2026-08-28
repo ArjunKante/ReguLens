@@ -28,7 +28,9 @@ class TesseractOCREngine:
 
     def recognize(self, image_path: str) -> list[OCRTextBlock]:
         image = Image.open(image_path)
-        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+        data = pytesseract.image_to_data(
+            image, lang=settings.ocr_languages, output_type=pytesseract.Output.DICT
+        )
 
         blocks: list[OCRTextBlock] = []
         n = len(data.get("text", []))

@@ -69,7 +69,17 @@ class InspectionContext:
 
     @property
     def webpage_fetch_succeeded(self) -> bool:
-        return any(wp.fetch_status == WebFetchStatus.SUCCESS for wp in self.web_pages)
+        """A hollow fetch (HTTP succeeded, but the page yielded no real
+        product data — see WebPage.hollow / services/pipeline.py) does not
+        count as a successful fetch here, even though `fetch_status` is
+        honestly SUCCESS at the HTTP layer. Otherwise a marketplace serving
+        its generic homepage instead of the listing looked exactly like a
+        genuinely complete scrape to evidence_quality_score below, turning a
+        failed retrieval into confident POTENTIAL_NON_COMPLIANCE findings
+        against data that was never actually retrieved."""
+        return any(
+            wp.fetch_status == WebFetchStatus.SUCCESS and not wp.hollow for wp in self.web_pages
+        )
 
     @property
     def has_any_images(self) -> bool:

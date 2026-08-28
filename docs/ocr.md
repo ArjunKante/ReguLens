@@ -30,6 +30,29 @@ from the tesseract binary. `TESSERACT_CMD` in `.env` points at the binary
 `C:\Program Files\Tesseract-OCR\tesseract.exe` on Windows dev machines
 where it isn't on PATH).
 
+**Languages.** Rule 9(4) permits mandatory declarations to be in Hindi
+(Devanagari) or English — a label whose required field is printed only in
+Hindi is real, legally-compliant evidence, not something OCR is allowed to
+ignore. `OCR_LANGUAGES` (`app/core/config.py::ocr_languages`, default
+`"eng+hin"`) is passed as Tesseract's multi-language `lang=` argument, so
+both scripts are recognized in the same pass. The Docker image installs
+`tesseract-ocr-hin` (the Hindi trained-data package) alongside
+`tesseract-ocr` for this; a local, non-Docker Tesseract install needs the
+Hindi language pack too — see the README's setup section. Recognizing the
+text is only half the job: `app/nlp/patterns.py` also carries Devanagari
+keyword patterns (शुद्ध मात्रा, अधिकतम खुदरा मूल्य, निर्माता, ...) for the
+same fields its English patterns already cover, and
+`app/rules/quantity.py` understands Devanagari unit words (ग्राम,
+किलोग्राम, मिली, लीटर, ...) for the Rule 26(a) small-package exemption
+gate — without this, correctly-transcribed Hindi text still wouldn't be
+recognized as a declaration. Devanagari **numerals** (०-९) are explicitly
+not parsed — real packaging overwhelmingly uses Arabic numerals even in
+Hindi-language text, so this stays a documented non-goal rather than a
+guessed conversion table. Marathi was considered and deliberately left out:
+Rule 9(4) names only Hindi and English, and mixing a third, closely-related
+Devanagari script into the same Tesseract pass raises glyph-confusion risk
+between Hindi and Marathi for no compliance benefit.
+
 ### PaddleOCR (interface implemented, not installed)
 
 Section 7 names PaddleOCR as the "preferred initial provider." Being

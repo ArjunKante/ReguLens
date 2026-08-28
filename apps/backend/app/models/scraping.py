@@ -29,6 +29,18 @@ class WebPage(Base, UUIDPKMixin):
     http_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # True when the HTTP fetch itself succeeded but the page yielded no real
+    # product data (e.g. a marketplace serving its generic app-shell/homepage
+    # instead of the actual listing — see services/pipeline.py's hollow-
+    # success detection). Kept separate from fetch_status, which stays an
+    # honest record of what actually happened at the HTTP layer — this flag
+    # is what tells the compliance engine (app/compliance/context.py) not to
+    # treat a hollow "success" as real evidence when scoring evidence
+    # quality, so a failed/gated scrape reports UNABLE_TO_VERIFY/
+    # NEEDS_MANUAL_REVIEW rather than a confident POTENTIAL_NON_COMPLIANCE
+    # against data that was never actually retrieved.
+    hollow: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     robots_txt_allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     robots_txt_checked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

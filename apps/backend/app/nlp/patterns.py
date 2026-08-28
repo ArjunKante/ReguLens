@@ -165,6 +165,76 @@ _KEYWORD_PATTERNS: list[tuple[str, re.Pattern, float]] = [
            r"[₹]?\s*(?P<val>[\d,]+(?:\.\d{1,2})?)"),
         0.75,
     ),
+    # --- Hindi/Devanagari declaration wording (Rule 9(4) permits mandatory
+    # declarations in Hindi or English) --------------------------------------
+    # Values (numbers, currency, dates) stay in Arabic numerals — near-
+    # universal on real Indian packaging even in Hindi-language text — so
+    # only the label-keyword side gains a Devanagari alternative; each
+    # pattern keeps the same anchoring discipline as its English sibling
+    # (no bare-number/bare-₹ fallback, same "require the label word" rule
+    # that fixed the earlier MRP/net-quantity noise bugs).
+    (
+        F.MRP,
+        # Currency marker after the Hindi keyword may itself be Latin-script
+        # ("Rs.") — real bilingual labels routinely write "MRP / अधिकतम
+        # खुदरा मूल्य: Rs. 150.00", mixing scripts mid-line (found live-
+        # testing a realistic bilingual label). रु./rs./inr are all accepted,
+        # same as the English MRP pattern's currency options.
+        _p(r"(?:अधिकतम\s*खुदरा\s*मूल्य|एम\.?\s*आर\.?\s*पी\.?|एमआरपी)\s*[:\-]?\s*"
+           r"[₹]?\s*(?:(?:रु|rs|inr)\.?\s*)?(?P<val>[\d,]+(?:\.\d{1,2})?)"),
+        0.85,
+    ),
+    (
+        F.NET_QUANTITY,
+        _p(
+            r"(?:शुद्ध\s*मात्रा|निवल\s*मात्रा)\s*[:\-]?\s*"
+            r"(?P<val>\d+(?:\.\d+)?\s*(?:g|gm|gram|grams|kg|kgs|ml|l|lt|ltr|litre|liter|"
+            r"ग्राम|ग्रा\.?|किलोग्राम|किलो|मिलीलीटर|मिली|लीटर)\b)"
+        ),
+        0.85,
+    ),
+    (
+        F.MANUFACTURER_NAME,
+        _p(r"निर्माता\s*[:\-]\s*(?P<val>[^|\n\r,]{3,120})"),
+        0.75,
+    ),
+    (
+        F.PACKER_NAME,
+        _p(r"पैककर्ता\s*[:\-]\s*(?P<val>[^|\n\r,]{3,120})"),
+        0.75,
+    ),
+    (
+        F.IMPORTER_NAME,
+        _p(r"आयातक\s*[:\-]\s*(?P<val>[^|\n\r,]{3,120})"),
+        0.75,
+    ),
+    (
+        F.COUNTRY_OF_ORIGIN,
+        _p(r"मूल\s*देश\s*[:\-]?\s*(?P<val>[^\d|\n\r,]{1,40})"),
+        0.8,
+    ),
+    (
+        F.CONSUMER_CARE_PHONE,
+        _p(r"(?:उपभोक्ता\s*सेवा|ग्राहक\s*सेवा|हेल्पलाइन)\s*[:\-]?\s*"
+           r"(?P<val>[\+]?[\d][\d\-\s]{7,14}\d)"),
+        0.75,
+    ),
+    (
+        F.CONSUMER_CARE_NAME,
+        _p(r"(?:उपभोक्ता\s*सेवा|ग्राहक\s*सेवा)\s*[:\-]?\s*(?P<val>[^|\n\r]{3,150})"),
+        0.6,
+    ),
+    (
+        F.MFG_DATE,
+        _p(r"निर्माण\s*तिथि\s*[:\-]?\s*(?P<val>[\w/\-\. ]{4,20})"),
+        0.7,
+    ),
+    (
+        F.BEST_BEFORE_DATE,
+        _p(r"(?:सर्वोत्तम\s*पूर्व|उपयोग\s*तिथि|समाप्ति\s*तिथि|एक्सपायरी)\s*[:\-]?\s*"
+           r"(?P<val>[\w/\-\. ]{4,20})"),
+        0.7,
+    ),
 ]
 
 
@@ -190,6 +260,21 @@ _PIN_CODE_PATTERN = re.compile(r"\b\d{6}\b")
 _ADDRESS_WINDOW_CHARS = 220
 _ADDRESS_BASE_CONFIDENCE = 0.55
 
+# A name-keyword match can land right next to an unrelated administrative
+# code line instead of the actual name — found on a real Parle biscuit
+# label whose "MFD.BY:" line sits immediately above a closely-spaced
+# "FSSAI LIC. No.: 1013022002253" line; the two are close enough in the
+# image that OCR line-reconstruction reads them as adjacent, so
+# manufacturer_name captured the license number instead of a name. No real
+# company name legitimately starts with these administrative markers, so
+# a match whose captured value starts with one is rejected outright rather
+# than trusted — same "don't trust an anchor blindly" discipline as the
+# rest of this module (e.g. the bare-noun-without-separator guard above).
+_NON_NAME_VALUE_PATTERN = re.compile(
+    r"^(?:fssai\s*)?lic(?:en[cs]e)?\.?\s*no\.?\b|^fssai\b|^gst(?:in)?\b|^cin\b|^reg(?:istration)?\.?\s*no\.?\b",
+    re.IGNORECASE,
+)
+
 
 def find_field_candidates(text: str) -> list[TextMatch]:
     """Scans free text (webpage visible text OR OCR text) for candidate
@@ -205,6 +290,8 @@ def find_field_candidates(text: str) -> list[TextMatch]:
         for m in pattern.finditer(text):
             value = m.group("val").strip().strip(",;")
             if not value:
+                continue
+            if field_name in _ADDRESS_FIELD_FOR_NAME and _NON_NAME_VALUE_PATTERN.match(value):
                 continue
             start = max(0, m.start() - 20)
             end = min(len(text), m.end() + 20)

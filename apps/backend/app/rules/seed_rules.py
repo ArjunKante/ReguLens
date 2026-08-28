@@ -193,9 +193,15 @@ SEED_RULES: list[SeedRule] = [
         "severity": "CRITICAL",
         "validator_config": {
             "field": F.NET_QUANTITY,
+            # Devanagari unit alternatives (ग्राम/किलो/मिली/लीटर) mirror
+            # app/nlp/patterns.py's Hindi net-quantity extraction and
+            # app/rules/quantity.py's exemption-gate parsing — Rule 9(4)
+            # permits declarations in Hindi, so a value extracted from a
+            # Hindi-only label must not fail this rule's own format check
+            # just because it wasn't written in English.
             "patterns": [
-                r"\d+(\.\d+)?\s*(g|gm|gram|grams|kg|kgs|kilogram)\b",
-                r"\d+(\.\d+)?\s*(ml|millilitre|milliliter|l|lt|ltr|litre|liter)\b",
+                r"\d+(\.\d+)?\s*(g|gm|gram|grams|kg|kgs|kilogram|ग्राम|ग्रा\.?|किलोग्राम|किलो)\b",
+                r"\d+(\.\d+)?\s*(ml|millilitre|milliliter|l|lt|ltr|litre|liter|मिलीलीटर|मिली|लीटर)\b",
                 r"\d+\s*(pieces|pcs|pc|units?|nos?\.?|count)\b",
                 r"pack of\s*\d+",
             ],
@@ -287,7 +293,17 @@ SEED_RULES: list[SeedRule] = [
         "severity": "CRITICAL",
         "validator_config": {
             "field": F.MRP,
-            "patterns": [r"(₹|rs\.?|inr|mrp)\s*\.?\s*\d+(\.\d{1,2})?"],
+            # The currency marker is optional, not required: app/nlp/patterns.py
+            # deliberately captures only the numeric portion into a declaration's
+            # `value` (the ₹/Rs./MRP keyword that gates extraction lives in the
+            # surrounding text, not the captured value itself — see the MRP
+            # patterns there) — so a real, correctly-extracted MRP declaration
+            # is a bare number like "120.00", never "Rs. 120.00". Requiring the
+            # marker *inside* the value made this rule fail for every real
+            # extracted MRP (found live-testing a genuinely compliant Hindi
+            # label that should have PASSed this CRITICAL rule); still matches
+            # a value that does carry the marker too (e.g. hand-supplied text).
+            "patterns": [r"(?:₹|rs\.?|inr|mrp)?\s*\.?\s*\d+(\.\d{1,2})?"],
         },
         "source_document": SOURCE_DOC,
         "source_locator": "Rule 6(1)(e)",

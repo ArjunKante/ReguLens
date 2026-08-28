@@ -83,7 +83,7 @@ docker-compose.yml   backend + frontend + postgres
 - Python 3.11
 - Node.js 20+
 - PostgreSQL 16 (a local instance, or run `docker compose up postgres`)
-- [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) binary installed and on PATH (or set `TESSERACT_CMD` to its full path)
+- [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) binary installed and on PATH (or set `TESSERACT_CMD` to its full path), **with the Hindi language pack** — the UB-Mannheim Windows installer has a language checklist during setup (tick "Hindi"); on Linux, `apt install tesseract-ocr-hin` alongside `tesseract-ocr`. Required because declarations may legally be in Hindi or English (Rule 9(4)) — see `docs/ocr.md`. The Docker image already includes this.
 
 ### 1. Environment
 

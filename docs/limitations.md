@@ -45,6 +45,14 @@ because it was overlooked.
 - PaddleOCR (the brief's stated preferred provider) is **not installed** —
   only its interface is implemented. Tesseract is the actual, tested engine
   in this build. See `docs/ocr.md`.
+- OCR/extraction reads Hindi (Devanagari) as well as English by default
+  (`OCR_LANGUAGES=eng+hin`, per Rule 9(4)) — this is a different thing from
+  the frontend UI language noted under "Frontend" below, which stays
+  English-only. Devanagari **numerals** (०-९) are not parsed, only
+  Devanagari label/unit words alongside Arabic-numeral values — no real
+  packaging convention was found using them, so this stays an honest gap
+  rather than a guessed conversion table. Marathi was deliberately not
+  added; see `docs/ocr.md` for why.
 
 ## Scraping
 
@@ -57,6 +65,15 @@ because it was overlooked.
   fully-compliant Playwright fetch. LM-SCAN does not attempt to circumvent
   this (by design — see Section 4) and will report `ACCESS_DENIED`/`FAILED`
   and fall back to the screenshot-upload flow.
+- Some marketplaces (observed live on Blinkit) don't block the fetch at all
+  but silently serve a generic homepage/app-shell instead of the real
+  listing (e.g. requiring a delivery-location context a stateless fetch
+  never provides) — an HTTP-level success carrying no real product data.
+  This is detected (`WebPage.hollow`) and now correctly excluded from
+  evidence-quality scoring (`docs/compliance-engine.md`), but LM-SCAN still
+  cannot get past it to the real listing — it reports `UNABLE_TO_VERIFY`/
+  `NEEDS_MANUAL_REVIEW` and falls back to the screenshot-upload flow, same
+  as an outright-blocked fetch.
 - No automated integration test exercises a real, live marketplace fetch —
   this was manually smoke-tested once during development (see
   `docs/demo-guide.md` and `docs/testing.md`), not part of CI.

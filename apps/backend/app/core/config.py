@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # --- OCR ---
     ocr_engine: str = "tesseract"
     tesseract_cmd: str = "tesseract"
+    # Rule 9(4) permits mandatory declarations in Hindi (Devanagari) or
+    # English, so OCR must read both by default — a label whose required
+    # field is printed only in Hindi would otherwise be misread/garbled by
+    # English-only recognition and wrongly scored as "not found". See
+    # docs/ocr.md. Tesseract's `+`-joined multi-language syntax.
+    ocr_languages: str = "eng+hin"
 
     # --- Batch scan ---
     # V1's in-process BackgroundTasks worker (no Celery/RQ yet, see

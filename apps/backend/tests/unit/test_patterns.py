@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.nlp.patterns import find_field_candidates
 from app.rules import fields as F
+from app.rules.quantity import parse_net_quantity
 
 
 def _values_for(text: str, field: str) -> list[str]:
@@ -24,6 +25,19 @@ def test_manufacturer_name_and_address_extracted_from_real_label_wording():
     assert names and "PEPSICO" in names[0].upper()
     assert addresses, "expected an address candidate once a 6-digit PIN code follows the name"
     assert "122002" in addresses[0]
+
+
+def test_manufacturer_name_rejects_an_adjacent_license_number_line():
+    """Real Parle biscuit label OCR: "MFD.BY:" sits on its own line
+    immediately above a closely-spaced "FSSAI LIC. No.: 1013022002253"
+    line — close enough that OCR line-reconstruction reads them as
+    adjacent, so the value right after "MFD.BY:" is the license number,
+    not a name. No real company name starts with "LIC."/"FSSAI"/etc., so
+    this must be rejected rather than reported as the manufacturer."""
+    text = "MFD.BY: LIC. No.: 1013022002253 (NT)- SUNSHINE BAKERY FOODS PVT LTD, 333/1 BATLAGUNDU ROAD, NILAKOTTAI, TN - 624208"
+    assert not _values_for(text, F.MANUFACTURER_NAME)
+    # A genuine name right after the keyword must still work.
+    assert _values_for("MFD.BY: Acme Foods Pvt Ltd", F.MANUFACTURER_NAME) == ["Acme Foods Pvt Ltd"]
 
 
 def test_manufacturer_abbreviations_mfd_and_mfg_by_are_recognized():
@@ -106,3 +120,48 @@ def test_mrp_bare_currency_symbol_is_not_matched():
     # Still matches real MRP declarations.
     assert _values_for("MRP: Rs. 60.00", F.MRP)
     assert _values_for("M.R.P ₹120", F.MRP)
+
+
+# --- Hindi/Devanagari declaration wording (Rule 9(4) permits Hindi or
+# English) — a label whose required field is printed only in Hindi must be
+# recognized the same way its English equivalent already is. ---
+
+
+def test_hindi_mrp_is_recognized():
+    assert _values_for("अधिकतम खुदरा मूल्य: ₹120", F.MRP) == ["120"]
+    assert _values_for("एम.आर.पी. रु. 60.00", F.MRP) == ["60.00"]
+
+
+def test_hindi_mrp_recognizes_a_latin_currency_marker_on_a_bilingual_label():
+    """Real bilingual packaging mixes scripts mid-line: "MRP / अधिकतम
+    खुदरा मूल्य: Rs. 150.00" — the currency marker after the Hindi keyword
+    may itself be Latin-script, not just रु./₹."""
+    assert _values_for("अधिकतम खुदरा मूल्य: Rs. 150.00", F.MRP) == ["150.00"]
+
+
+def test_hindi_net_quantity_is_recognized_and_parses_for_the_exemption_gate():
+    values = _values_for("शुद्ध मात्रा: 500 ग्राम", F.NET_QUANTITY)
+    assert values == ["500 ग्राम"]
+    parsed = parse_net_quantity(values[0])
+    assert parsed is not None
+    assert parsed.basis == "weight_g"
+    assert parsed.normalized_value == 500
+
+    volume = _values_for("निवल मात्रा: 1 लीटर", F.NET_QUANTITY)
+    assert volume == ["1 लीटर"]
+    parsed_volume = parse_net_quantity(volume[0])
+    assert parsed_volume is not None
+    assert parsed_volume.basis == "volume_ml"
+    assert parsed_volume.normalized_value == 1000
+
+
+def test_hindi_manufacturer_and_country_of_origin_are_recognized():
+    assert _values_for("निर्माता: एकमे फूड्स प्राइवेट लिमिटेड", F.MANUFACTURER_NAME)
+    assert _values_for("आयातक: ग्लोबल ट्रेडर्स", F.IMPORTER_NAME)
+    assert _values_for("मूल देश: भारत", F.COUNTRY_OF_ORIGIN)
+
+
+def test_hindi_bare_noun_without_separator_is_not_matched():
+    """Same anchoring discipline as the English bare-noun regression test
+    above: a Hindi label word without an explicit separator must not match."""
+    assert not _values_for("निर्माता विवरण अनुभाग", F.MANUFACTURER_NAME)
