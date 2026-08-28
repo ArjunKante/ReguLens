@@ -61,6 +61,15 @@ report generator — only new rows in `seed_rules.py`.
 
 ## Implemented rules (online-listing-checkable declarations)
 
+### LMPC-R3-APPLICABILITY — Chapter II applicability gate
+- **Reference:** Rule 3, current text substituted by G.S.R. 629(E) dated 23 June 2017 (in force 1.1.2018).
+- **Source text (substance):** Chapter II does not apply to (1) packages containing a quantity of more than 25 kg or 25 litre; (2) cement, fertilizer, and agricultural farm produce sold in bags above 50 kg; (3) packaged commodities meant for industrial consumers or institutional consumers.
+- **Added 2026-08-28** per `docs/Legal_Metrology_Rules_Corrected.md` Section 3 / Section 18 Correction 4 — this gate did not previously exist in the codebase at all, so every rule below ran unconditionally regardless of package size or consumer type.
+- **Applicability:** Gating logic only — runs first, ahead of the category gate and Rule 26(a), and marks other in-scope rules `NOT_APPLICABLE` when Chapter II does not apply.
+- **Important correction preserved from the corrected specification:** must **not** be implemented as a flat "quantity ≤ 25kg/25 litre" test — cement, fertilizer, and agricultural farm produce sold in bags remain covered by Chapter II up to 50 kg, not just 25 kg.
+- **Validation type:** `CROSS_FIELD_CHECK` (gating rule, not a standalone finding). LM-SCAN has no commodity-type classifier (cement/fertilizer/agricultural farm produce) beyond a net-quantity parse, and no industrial/institutional-consumer classifier beyond an explicit self-description in listing text (`app/nlp/classification.py::is_institutional_or_industrial_context` — the same narrow, literal, auditable keyword-match style already used for tobacco detection, never inferred from price/size). Accordingly: net quantity > 50 kg, or > 25 litre, or an explicit institutional/industrial self-description → confidently exempt; net quantity strictly between 25 kg and 50 kg → deliberately **not** confidently exempted (LM-SCAN cannot rule out an undetectable cement/fertilizer/farm-produce bag in that band, so it prefers continued applicability over a false exemption); net quantity absent/unparseable → not gated (continued applicability).
+- **Severity:** INFO (gating logic).
+
 ### LMPC-R6-1A-MFR-NAME — Manufacturer / packer / importer name & address
 - **Reference:** Rule 6(1)(a), as substituted by G.S.R. 629(E) dated 23 June 2017 (in force 1.1.2018); Explanation I–III of Rule 6(1)(a).
 - **Source text (substance):** "Every package shall bear ... a definite, plain and conspicuous declaration ... as to (a) the name and address of the manufacturer, or where the manufacturer is not the packer, the name and address of the manufacturer and packer and for any imported package the name and address of the importer shall be mentioned."
@@ -75,16 +84,23 @@ report generator — only new rows in `seed_rules.py`.
 - **Applicability:** Only when the product is identified (from listing text/images) as imported, or an importer name/address is present without a domestic manufacturer.
 - **Validation type:** `CROSS_FIELD_CHECK` — if `importer` is present/declared and `country_of_origin` is absent → issue; if the product is positively identified as domestic (a manufacturer/packer was found and no importer), rule is `NOT_APPLICABLE`; if origin cannot be determined at all (no evidence retrieved), the check is `UNABLE_TO_VERIFY` rather than assumed domestic.
 - **Severity:** MAJOR.
-- **Note on the 2026 e-commerce amendment:** Rule 6(1)(aa) itself is strictly imported-products-only and package-level ("mentioned on the package") — it is **not** extended to domestic products or to an e-commerce display duty by any amendment found. An earlier draft of this document speculated a broader "e-commerce policy" obligation here (citing a general June 2020 DPIIT direction); that citation could not be precisely verified and has been removed. The real, precisely-citable 2026 requirement is the **separate, distinctly-numbered Rule 6(10A)** below, which is also imported-products-only.
+- **Scope note:** Rule 6(1)(aa) itself is strictly imported-products-only and package-level ("mentioned on the package") — it is **not** extended to domestic products or to any e-commerce display duty. No such extension is supported by the authoritative specification (`docs/Legal_Metrology_Rules_Corrected.md`).
 
-### LMPC-R6-10A-COO-FILTER — Searchable/sortable country-of-origin filter for imported products (e-commerce)
-- **Reference:** Rule 6(10A), inserted by the Legal Metrology (Packaged Commodities) Amendment Rules, 2026 — Gazette Notification **G.S.R. 128(E) dated 13 February 2026**, in force **1 July 2026** (already in force as of this document). Further amended by the Legal Metrology (Packaged Commodities) **Second** Amendment Rules, 2026 — G.S.R. 312(E) dated 27 April 2026 — with that provision in force **1 July 2027** (not yet in force; re-verify against the gazette once that date passes).
-- **Source text (as reported by secondary legal-update sources; the primary gazette text was not independently retrieved):** "Every e-commerce entity offering for sale any imported product shall ensure that the product listing contains a searchable and sortable filter specifying the country of origin."
-- **How this differs from Rule 6(1)(aa):** 6(1)(aa) requires country of origin to be mentioned *on the package*. 6(10A) additionally requires the *e-commerce platform itself* to provide a searchable/sortable filter by country of origin — a platform-level UI/data-architecture obligation, not just a labeling one.
-- **Applicability:** E-commerce listings of imported products only. Not domestic products; not physical-package-only (manual scan) inspections, since there is no "e-commerce entity" listing involved.
-- **Validation type:** `CROSS_FIELD_CHECK`. LM-SCAN can only verify the *declaration prerequisite* — whether country of origin is extractable from the listing page at all — never the platform's actual interactive filter widget, which a generic page-content scraper cannot assess. Accordingly this rule never reports a confident `PASS`: a declared country of origin on an imported product's listing is `NEEDS_MANUAL_REVIEW` ("prerequisite met, filter itself needs officer confirmation"); a missing declaration is `POTENTIAL_NON_COMPLIANCE`/`NEEDS_MANUAL_REVIEW` per the usual evidence-quality-aware absence logic; a domestic product or a listing-less inspection is `NOT_APPLICABLE`.
-- **Severity:** MAJOR.
-- **Caveat:** sourced from secondary legal-update summaries (SCC Online, Mondaq, TeamLease RegTech, Digital Policy Alert), not the primary e-Gazette PDF — the gazette numbers, dates, and rule number are corroborated across multiple independent sources, but the exact operative statutory text was not independently retrieved and quoted above may paraphrase rather than reproduce it verbatim. Re-verify against the primary gazette text (egazette.gov.in) before relying on this for a legal proceeding.
+> **Correction (dated 2026-08-28):** this document previously included a rule
+> `LMPC-R6-10A-COO-FILTER`, claiming a "Rule 6(10A)" searchable/sortable
+> country-of-origin filter requirement for e-commerce listings of imported
+> products, attributed to a "Legal Metrology (Packaged Commodities)
+> Amendment Rules, 2026" and a "Second Amendment Rules, 2026." That rule has
+> been **removed**. It was sourced from secondary web summaries, not from
+> the supplied consolidated PDF, and this document's own prior text admitted
+> the primary gazette text was never independently retrieved. The
+> authoritative specification (`docs/Legal_Metrology_Rules_Corrected.md`),
+> based only on the supplied PDF, contains no Rule 6(10A) and no such
+> amendment. The corresponding database row (`LMPC-R6-10A-COO-FILTER`) has
+> been deactivated (`Rule.active = False`), not deleted — its history
+> remains in `rule_versions` for audit purposes. Do not reintroduce a
+> country-of-origin e-commerce filter requirement unless it is supported by
+> the authoritative supplied source document.
 
 ### LMPC-R6-1B-GENERIC-NAME — Common/generic name of commodity
 - **Reference:** Rule 6(1)(b).
@@ -126,9 +142,9 @@ report generator — only new rows in `seed_rules.py`.
 - **Reference:** Rule 6(2), substituted by G.S.R. 385(E) dated 14 May 2015 (effective 1.1.2016, compliance dispensed with until 30.6.2016).
 - **Source text:** "Every package shall bear the name, address, telephone number, e-mail address ... of the person who can be or the office which can be contacted, in case of consumer complaints."
 - **Applicability:** All in-scope retail packages.
-- **Validation type:** `PRESENCE_CHECK` for name/address component (`MANUAL_REVIEW_CHECK` fallback for phone/email, since the Rule text does not make e-mail mandatory in all cases — "if available" language appeared in an earlier substituted version — see `notes` below for the textual history) + `PATTERN_CHECK` for phone number / e-mail format when present.
-- **Notes on textual history:** an earlier version of Rule 6(2) (pre-2015 text visible in the Source PDF) read "...telephone number, E-mail address, **if available**..."; the 2015 substitution removed "if available" from the printed clause. Because the Source PDF shows both versions inline without a clean single current-text extraction guarantee, LM-SCAN treats a **missing phone or email as NEEDS_MANUAL_REVIEW rather than an automatic MRP-grade violation**, and only flags **complete absence of any consumer-care contact route** (no name, no address, no phone, no email) as `POTENTIAL_NON_COMPLIANCE`.
-- **Severity:** MAJOR (complete absence) / MINOR (partial).
+- **Validation type:** `CROSS_FIELD_CHECK` — name, address, telephone number, **and** e-mail address are each independently required; none of the four is an accepted substitute for another. A missing field routes through the same evidence-quality-aware logic as every other rule (`POTENTIAL_NON_COMPLIANCE` under strong evidence, `NEEDS_MANUAL_REVIEW` under weak/uncertain evidence, `UNABLE_TO_VERIFY` with no usable evidence) — OCR uncertainty is still never turned into an automatic violation.
+- **Correction (dated 2026-08-28), per `docs/Legal_Metrology_Rules_Corrected.md` Section 18 Correction 1:** an earlier version of Rule 6(2) (pre-2015 text visible in the Source PDF) read "...telephone number, E-mail address, **if available**..."; the 2015 substitution removed "if available" from the printed clause, and that older wording must **not** be treated as making phone/email legally optional. A prior version of this rule's validator accepted name-OR-address plus phone-OR-email as sufficient for a PASS, reasoning from the historical "if available" text — that was incorrect and has been fixed; all four fields are now required.
+- **Severity:** MAJOR.
 
 ### LMPC-R6-10-ECOMMERCE-DISPLAY — E-commerce mandatory display of declarations
 - **Reference:** Rule 6(10), substituted by G.S.R. 629(E) dated 23 June 2017, in force **1 January 2018**.
@@ -139,9 +155,10 @@ report generator — only new rows in `seed_rules.py`.
 
 ### LMPC-R6-11-UNIT-SALE-PRICE — Unit sale price
 - **Reference:** Rule 6(11), current text inserted by G.S.R. 226(E) dated 28 March 2022, effective 1 October 2022 (superseding an earlier version inserted by G.S.R. 779(E) dated 2 November 2021, effective 1 April 2022 — both versions are reproduced in the Source PDF; the 2022 version is later in time and is treated as current).
-- **Source text (current):** unit sale price, in rupees rounded to two decimals, per gram/kg, per cm/metre, per ml/litre, or per number, as applicable; not required where alcoholic-beverage State Excise law applies; **not required where retail sale price equals unit sale price** (i.e., single-unit unbroken packs).
-- **Applicability:** Multi-unit packages where RSP ≠ per-unit price is meaningful; single-item packages are exempt per the second proviso.
-- **Validation type:** `MANUAL_REVIEW_CHECK` — LM-SCAN cannot reliably determine from a listing alone whether a package is a "multi-unit" pack requiring unit-price disclosure vs. a single-unit pack that is exempt, so this rule is never auto-failed; it is surfaced for officer attention when net quantity phrasing suggests a multi-pack (e.g. "Pack of 3", "x2") and no unit price is found.
+- **Source text (current):** unit sale price, in rupees rounded to two decimals, per gram/kg, per cm/metre, per ml/litre, or per number, as applicable; not required where alcoholic-beverage State Excise law applies; **not required where retail sale price equals unit sale price**.
+- **Applicability:** Multi-unit packages where RSP ≠ per-unit price is meaningful.
+- **Important correction preserved from the corrected specification:** the express exception is "retail sale price equals unit sale price," **not** a blanket "single item = exempt" rule — that shortcut is not implemented.
+- **Validation type:** `CROSS_FIELD_CHECK` (moved from a plain `MANUAL_REVIEW_CHECK` on 2026-08-28 — architecturally necessary for the RSP-vs-unit-price comparison). If a declared `unit_sale_price` equals the declared `mrp`, this now deterministically `PASS`es per the express exception. Otherwise, LM-SCAN still cannot reliably determine from a listing alone whether a package is a "multi-unit" pack requiring unit-price disclosure, so it is never auto-failed outright: a multi-pack text hint (e.g. "Pack of 3", "x2") with no distinct unit price found routes through the same evidence-quality-aware absence logic as every other rule (can reach `POTENTIAL_NON_COMPLIANCE` under strong evidence, `NEEDS_MANUAL_REVIEW` under weak evidence); with no such hint, the rule defaults to `NEEDS_MANUAL_REVIEW`.
 - **Severity:** MINOR.
 
 ### LMPC-R9-MANNER — Manner of declaration (legible, prominent, correct script)
@@ -155,7 +172,8 @@ report generator — only new rows in `seed_rules.py`.
 - **Reference:** Rule 10(1) and 10(2), as amended by G.S.R. 629(E) dated 23 June 2017 (Explanation 1 substitution) and G.S.R. 385(E) dated 14 May 2015.
 - **Source text:** requires the manufacturer's/packer's/importer's **complete address** (postal address of factory or registered office, or street/city/state + PIN) sufficient for a consumer to "identify and locate" them; where a commodity is manufactured outside India and packed in India, the package must also show the Indian packer's/importer's name and address on the principal display panel; name must be the actual corporate name or trading name.
 - **Applicability:** Same as `LMPC-R6-1A-MFR-NAME`; this rule adds a **completeness** test on top of the presence test.
-- **Validation type:** `PATTERN_CHECK` (heuristic address-completeness: looks for a PIN code (6 digits) or city+state token in the address text extracted for manufacturer/packer/importer).
+- **Exceptions:** Rule 28 allows a manufacturer/packer to register a shorter address where the authority is satisfied it is sufficient; an address that doesn't clearly show both a PIN and a locality is therefore routed to manual review rather than auto-failed, since it may be a legitimately registered shorter address.
+- **Validation type:** `CROSS_FIELD_CHECK` (layered heuristic, corrected 2026-08-28 per `docs/Legal_Metrology_Rules_Corrected.md` Section 9 / Section 18 Correction 2). The previous validator PASSed on a PIN code **alone** OR a "word, word" locality pattern **alone** — the corrected specification names "PIN OR city+state = complete address" directly as an incorrect universal test. It now requires **both** a PIN code **and** a locality/city-state token in the same declared address to PASS; anything short of that routes to `NEEDS_MANUAL_REVIEW`, never an automatic violation. Complete absence of any address still goes through the standard evidence-quality-aware absence logic and can reach `POTENTIAL_NON_COMPLIANCE` under strong evidence — that is a different case from a short/ambiguous address.
 - **Severity:** MAJOR.
 
 ### LMPC-R11-QTY-BASIS — Net quantity computed on commodity only
@@ -171,6 +189,46 @@ report generator — only new rows in `seed_rules.py`.
 - **Applicability:** Used by the rule-selection step to mark `LMPC-R6-1A` .. `LMPC-R6-11` as `NOT_APPLICABLE` when the extracted net quantity is ≤10g/10ml and the product is not tobacco.
 - **Validation type:** `CROSS_FIELD_CHECK` (gating rule, not a standalone finding).
 - **Severity:** N/A (gating logic).
+
+### LMPC-R26-EXEMPT-FAST-FOOD — Restaurant/hotel-packed fast food exemption
+- **Reference:** Rule 26(b).
+- **Added 2026-08-28** per `docs/Legal_Metrology_Rules_Corrected.md` Section 11 ("IMPLEMENTED/conditional" in the Section 17 summary).
+- **Source text:** the Rules do not apply to a package containing fast food items packed by a restaurant or hotel and the like.
+- **Applicability:** Standalone advisory finding — never gates other rules `NOT_APPLICABLE` automatically. LM-SCAN cannot confirm a seller's actual restaurant/hotel-packer status from a marketplace listing.
+- **Validation type:** `CROSS_FIELD_CHECK` — a narrow keyword hint (e.g. "fast food", "restaurant", "hotel", "ready to eat") only decides whether the question is even plausibly in play: no hint → `NOT_APPLICABLE`; hint present → `NEEDS_MANUAL_REVIEW` (never a confident exemption asserted from the keyword alone).
+- **Severity:** MINOR.
+
+### LMPC-R26-EXEMPT-DRUG-FORMULATIONS — Certain drug formulations exemption
+- **Reference:** Rule 26(c).
+- **Added 2026-08-28** per `docs/Legal_Metrology_Rules_Corrected.md` Section 11, which explicitly warns: *"Do not classify a product as a qualifying drug formulation using OCR keywords alone."*
+- **Source text:** certain scheduled and non-scheduled formulations covered by the Drugs (Price Control) Order, 2013 are exempt; no exemption applies to medical devices declared as drugs.
+- **Applicability:** Standalone advisory finding — never a confident exemption from OCR keywords alone; the medical-device carve-out is left entirely to officer judgment.
+- **Validation type:** `MANUAL_REVIEW_CHECK` with an applicability keyword hint (e.g. "tablet", "capsule", "formulation", "pharmaceutical"): no hint → `NOT_APPLICABLE`; hint present → `NEEDS_MANUAL_REVIEW`.
+- **Severity:** MINOR.
+
+### LMPC-R26-EXEMPT-THREAD-COIL — Thread sold in coil to handloom weavers exemption
+- **Reference:** Rule 26(e).
+- **Added 2026-08-28** per `docs/Legal_Metrology_Rules_Corrected.md` Section 11, which notes the specific transaction/use condition (sale to a handloom weaver) is unlikely to be established reliably from OCR alone.
+- **Source text:** the Rules do not apply to thread sold in coil to handloom weavers.
+- **Applicability:** Standalone advisory finding — never a confident exemption from OCR keywords alone.
+- **Validation type:** `MANUAL_REVIEW_CHECK` with an applicability keyword hint (e.g. "thread", "coil", "handloom", "weaver"): no hint → `NOT_APPLICABLE`; hint present → `NEEDS_MANUAL_REVIEW`.
+- **Severity:** MINOR.
+
+> **Rule 26(d) — agricultural farm produce:** the supplied PDF shows this
+> sub-rule was **omitted** by G.S.R. 629(E), effective 1 January 2018, and
+> is therefore **not** implemented as a current exemption. Agricultural
+> farm produce is instead addressed in the amended Rule 3 applicability
+> gate (`LMPC-R3-APPLICABILITY` above), where the Chapter II threshold is
+> treated separately for bags above 50 kg. Do not reintroduce a Rule 26(d)
+> exemption.
+
+### LMPC-R31-ADVERTISEMENT-NET-QTY — Advertisement mentioning RSP must also declare net quantity
+- **Reference:** Rule 31(1)–(2).
+- **Added 2026-08-28** per `docs/Legal_Metrology_Rules_Corrected.md` Section 12 / Section 18 Correction 6, which explicitly warns against grouping Rule 31 with the out-of-scope Rules 32–34 — Rule 31 directly regulates advertisements that mention retail sale price and is squarely relevant to an online listing scanner.
+- **Source text:** any advertisement which mentions the retail sale price of a pre-packaged commodity must also contain a declaration of the net quantity, or the number of the commodity contained in the package; the font size of the net quantity in the advertisement must be the same as that of the retail sale price.
+- **Applicability:** Online listings that display a retail sale price (the listing itself functions as the advertisement); `NOT_APPLICABLE` where no RSP is displayed, or for a manual/photo-only inspection with no online listing.
+- **Validation type:** `CROSS_FIELD_CHECK`. Net-quantity presence is a deterministic, evidence-quality-aware check (missing net quantity alongside a displayed RSP → the standard absence logic, up to `POTENTIAL_NON_COMPLIANCE`). Font-size equality between the RSP and net-quantity numerals can never be verified from scraped page content (no DOM/CSS measurement available), so this rule never reports a full `PASS` once RSP is displayed — the best outcome, once both RSP and net quantity are present, is `NEEDS_MANUAL_REVIEW` for the font-size sub-requirement.
+- **Severity:** MINOR.
 
 ---
 
@@ -188,7 +246,7 @@ report generator — only new rows in `seed_rules.py`.
 | Rule 24 | Wholesale package declarations | Wholesale packages are not the retail/consumer packages typically listed on quick-commerce platforms; deferred. |
 | Rule 25 | Export package restrictions | Not applicable to domestic online retail listings. |
 | Rules 27–30 | Registration of manufacturers/packers/importers | Registration-status verification would require a separate government registry lookup, not extractable from a product listing; a future integration point, not implemented in V1. |
-| Rules 31–34, Schedules 1, 3–7 | Penalties, compounding, repeal/savings, error tables, sampling, equipment | Legal/administrative machinery and physical-measurement schedules; not applicable to automated online declaration screening. |
+| Rules 32–34, Schedules 1, 3–7 | Penalties, compounding, repeal/savings, error tables, sampling, equipment | Legal/administrative machinery and physical-measurement schedules; not applicable to automated online declaration screening. **Rule 31 is no longer in this group** — see `LMPC-R31-ADVERTISEMENT-NET-QTY` above (corrected 2026-08-28; Rule 31 directly regulates advertisements mentioning retail sale price and is squarely relevant to an online listing scanner). |
 
 ## Limitations / Unsupported Requirements
 
@@ -221,6 +279,37 @@ report generator — only new rows in `seed_rules.py`.
    referenced by cross-pointer (e.g. "food articles are governed by the FSS
    Act instead") but not independently implemented, because no such source
    document was supplied in `/legal/`.
+
+## Revision history
+
+- **2026-08-28**: Audited against the corrected authoritative specification
+  (`docs/Legal_Metrology_Rules_Corrected.md`, supplied by the product
+  owner). Changes made in this revision:
+  - **Removed** `LMPC-R6-10A-COO-FILTER` (a purported "Rule 6(10A)"
+    country-of-origin filter requirement citing a 2026 amendment) — not
+    supported by the authoritative supplied source; see the correction note
+    under `LMPC-R6-1AA-COUNTRY-ORIGIN` above. Database row deactivated, not
+    deleted.
+  - **Fixed** `LMPC-R6-2-CONSUMER-CARE` — name/address/phone/email are all
+    four independently required; a prior version incorrectly treated
+    phone/email as optional when name/address was present (Correction 1).
+  - **Fixed** `LMPC-R10-NAME-ADDR-FORM` — replaced the "PIN OR city+state"
+    heuristic with a conservative "PIN AND locality" test, with ambiguous
+    cases routed to manual review, not auto-failed (Correction 2).
+  - **Improved** `LMPC-R6-11-UNIT-SALE-PRICE` — now uses the already-
+    extracted `unit_sale_price` field for the RSP-equals-unit-price express
+    exception, without introducing a blanket single-item exemption
+    (Correction 3).
+  - **Added** `LMPC-R3-APPLICABILITY` (Chapter II applicability gate) —
+    did not exist in the codebase before this revision (Correction 4).
+  - **Added** `LMPC-R26-EXEMPT-FAST-FOOD`, `LMPC-R26-EXEMPT-DRUG-FORMULATIONS`,
+    `LMPC-R26-EXEMPT-THREAD-COIL` (Rule 26(b)/(c)/(e)) — did not exist
+    before this revision; confirmed Rule 26(d) remains correctly omitted
+    (Correction 5).
+  - **Added** `LMPC-R31-ADVERTISEMENT-NET-QTY` — previously miscategorized
+    as out-of-scope alongside Rules 32–34 (Correction 6).
+  - See `docs/traceability-matrix.md` for the corresponding test coverage
+    of every change in this revision.
 
 ## Traceability
 

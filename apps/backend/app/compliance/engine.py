@@ -26,15 +26,17 @@ from app.models.enums import ComplianceStatus, ProductCategoryCode, ValidationTy
 from app.models.inspection import Inspection
 from app.models.rules import Rule, RuleVersion
 from app.models.scraping import OCRResult, ProductImage, WebPage
-from app.nlp.classification import is_tobacco_product
+from app.nlp.classification import is_institutional_or_industrial_context, is_tobacco_product
 from app.rules import fields as F
-from app.rules.validators import VALIDATORS, evaluate_small_package_exemption
+from app.rules.validators import VALIDATORS, evaluate_chapter2_applicability, evaluate_small_package_exemption
 
 ENGINE_VERSION = "1.0.0"
 
-# Rules that determine the small-package exemption's own trigger condition
-# must never be suppressed by that same exemption (Section 26/Rule 26(a)).
-_SKIP_SMALL_PACKAGE_GATE = {"LMPC-R6-1C-NET-QUANTITY"}
+# Rules that determine a quantity-based gate's own trigger condition must
+# never be suppressed by that same gate (Rule 3 Chapter II applicability,
+# Rule 26(a) small-package exemption) -- both key off net quantity, so
+# NET_QUANTITY itself must always still be evaluated.
+_SKIP_QUANTITY_DEPENDENT_GATES = {"LMPC-R6-1C-NET-QUANTITY"}
 
 
 def _build_context(db: Session, inspection: Inspection) -> InspectionContext:
@@ -65,6 +67,7 @@ def _build_context(db: Session, inspection: Inspection) -> InspectionContext:
         ocr_results=ocr_results,
         is_tobacco_product=is_tobacco_product(*text_blob_parts),
         origin_status=_classify_origin(declarations, has_sufficient_evidence=bool(web_pages) or bool(images)),
+        institutional_or_industrial_context=is_institutional_or_industrial_context(*text_blob_parts),
     )
     return ctx
 
@@ -130,6 +133,7 @@ def run_compliance_checks(
     db: Session, inspection: Inspection, category: ProductCategoryCode
 ) -> list[ComplianceCheck]:
     ctx = _build_context(db, inspection)
+    chapter2_exempt = evaluate_chapter2_applicability(ctx)
     exempt = evaluate_small_package_exemption(ctx)
 
     now = dt.datetime.now(dt.timezone.utc)
@@ -139,9 +143,27 @@ def run_compliance_checks(
         if rule_version.gating_only:
             continue
 
-        outcome = _category_gate(rule_version, category)
+        # Rule 3's Chapter II applicability gate runs first, ahead of the
+        # category gate and Rule 26(a), per the corrected rule-selection
+        # flow (docs/Legal_Metrology_Rules_Corrected.md Section 15): if
+        # Chapter II doesn't apply at all, nothing downstream of it matters.
+        outcome = None
+        if chapter2_exempt is True and rule_version.rule.rule_key not in _SKIP_QUANTITY_DEPENDENT_GATES:
+            outcome = ValidationOutcome(
+                status=ComplianceStatus.NOT_APPLICABLE,
+                reason=(
+                    "Rule 3 exempts this package from Chapter II of the Legal Metrology "
+                    "(Packaged Commodities) Rules, 2011 (net quantity exceeds the applicable "
+                    "threshold, or the listing/product indicates an industrial or "
+                    "institutional consumer)."
+                ),
+                confidence=0.7,
+            )
 
-        if outcome is None and exempt is True and rule_version.rule.rule_key not in _SKIP_SMALL_PACKAGE_GATE:
+        if outcome is None:
+            outcome = _category_gate(rule_version, category)
+
+        if outcome is None and exempt is True and rule_version.rule.rule_key not in _SKIP_QUANTITY_DEPENDENT_GATES:
             outcome = ValidationOutcome(
                 status=ComplianceStatus.NOT_APPLICABLE,
                 reason=(

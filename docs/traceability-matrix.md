@@ -17,16 +17,14 @@ re-check this matrix whenever a rule in `seed_rules.py` changes.
 
 - **Rule / Source / Effective date** are copied from each rule's
   `rule_reference`, `source_document`/`source_locator`, and `effective_from`
-  in `seed_rules.py`. The primary source is
-  `Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf`
-  (in `/legal/`) for every rule already present as of this document's prior
-  revisions. The one rule added this revision (**Rule 6(10A)**) is sourced
-  from secondary legal-update publications (SCC Online, Mondaq, TeamLease
-  RegTech, Digital Policy Alert), cross-corroborated across all four for the
-  gazette numbers/dates/rule number, but the primary e-Gazette text was not
-  independently retrieved — see that row's footnote and
-  `docs/legal-rules.md`'s entry for the full caveat. Do not treat that one
-  citation as court-ready without checking egazette.gov.in directly first.
+  in `seed_rules.py`. The sole authoritative source for every row in this
+  matrix is the supplied consolidated PDF, as corrected/re-confirmed in
+  `docs/Legal_Metrology_Rules_Corrected.md`. A rule sourced only from
+  secondary legal-update publications (news summaries, law-firm client
+  alerts, etc.) rather than the supplied source is **not** eligible to be
+  listed here as implemented — see the 2026-08-28 correction entry in
+  Revision history below for a worked example of a rule that was removed
+  for exactly this reason.
 - **Applicability** — `Online` (only meaningful for/checked against an
   online listing), `Physical` (only meaningful for a physical package —
   none of LM-SCAN's implemented rules are Physical-only; see
@@ -55,21 +53,26 @@ re-check this matrix whenever a rule in `seed_rules.py` changes.
 
 | Rule | Source | Effective date | Applicability | Implemented | Tested |
 |---|---|---|---|---|---|
+| **Rule 3** — Chapter II applicability gate (`LMPC-R3-APPLICABILITY`) | LMPC Rules 2011, Rule 3; substituted by G.S.R. 629(E), 23 Jun 2017 | 2018-01-01 | Online + Physical (gating logic — not a standalone finding) | ✅ | ✅ `test_rule3_ordinary_retail_package_is_not_gated`, `test_rule3_quantity_between_25_and_50kg_is_not_confidently_exempted`, `test_rule3_quantity_above_25_litre_is_exempt`, `test_rule3_quantity_above_50kg_is_exempt_even_for_bagged_commodities`, `test_rule3_industrial_use_only_listing_is_exempt_regardless_of_quantity`, `test_rule3_insufficient_evidence_does_not_gate_as_exempt` |
 | **Rule 6(1)(a)** — Manufacturer/packer/importer name & address (`LMPC-R6-1A-MFR-NAME`) | LMPC Rules 2011, Rule 6(1)(a); substituted by G.S.R. 629(E), 23 Jun 2017 | 2018-01-01 | Online + Physical | ✅ | ✅ `test_complete_high_quality_listing_passes_core_rules`, `test_small_package_exemption_gates_other_rules_not_applicable` |
 | **Rule 6(1)(aa)** — Country of origin, imported products (`LMPC-R6-1AA-COUNTRY-ORIGIN`) | LMPC Rules 2011, Rule 6(1)(aa); substituted by G.S.R. 629(E), 23 Jun 2017 | 2018-01-01 | Online + Physical | ✅ | ✅ `test_country_of_origin_not_applicable_for_domestic_online_listing`, `test_country_of_origin_unable_to_verify_when_origin_cannot_be_determined` |
-| **Rule 6(10A)** — Searchable/sortable country-of-origin filter, imported products, e-commerce (`LMPC-R6-10A-COO-FILTER`) ¹ | LMPC (Amendment) Rules 2026, G.S.R. 128(E) 13 Feb 2026; further amended by Second Amendment Rules 2026, G.S.R. 312(E) 27 Apr 2026 | **2026-07-01** (already in force); G.S.R. 312(E)'s provision: 2027-07-01 (not yet in force) | **Online only** (imported products) | ✅ *(partial — declaration prerequisite only; cannot verify the platform's actual filter UI)* | ✅ `test_coo_filter_rule_not_applicable_for_domestic_product`, `test_coo_filter_rule_needs_review_when_declared_but_filter_unverifiable` |
+| ~~Rule 6(10A) — searchable/sortable country-of-origin filter~~ (`LMPC-R6-10A-COO-FILTER`) | **REMOVED, 2026-08-28** — see correction note ¹ below | — | — | ❌ *(deactivated)* | ✅ `test_lmpc_r6_10a_coo_filter_is_not_an_active_rule` (asserts it produces no check) |
 | **Rule 6(1)(b)** — Common/generic name (`LMPC-R6-1B-GENERIC-NAME`) | LMPC Rules 2011, Rule 6(1)(b) | 2011-04-01 | Online + Physical | ✅ | ✅ `test_total_ocr_failure_does_not_become_automatic_potential_non_compliance` |
 | **Rule 6(1)(c) / Rule 11** — Net quantity declaration (`LMPC-R6-1C-NET-QUANTITY`) | LMPC Rules 2011, Rule 6(1)(c); Rule 11 | 2011-04-01 | Online + Physical | ✅ | ✅ `test_complete_high_quality_listing_passes_core_rules` |
 | **Rule 6(1)(d)** — Month/year of manufacture (`LMPC-R6-1D-MFG-DATE`) | LMPC Rules 2011, Rule 6(1)(d) | 2011-04-01 | Online + Physical | ✅ | ✅ `test_mfg_date_passes_when_a_date_like_value_is_declared` |
 | **Rule 6(1)(da)** — Best before/use-by date (`LMPC-R6-1DA-BEST-BEFORE`) | LMPC Rules 2011, Rule 6(1)(da) | 2018-01-01 | Online + Physical | ✅ | ✅ `test_best_before_not_applicable_for_household_category` |
 | **Rule 6(1)(e)** — Retail sale price / MRP (`LMPC-R6-1E-MRP`) | LMPC Rules 2011, Rule 6(1)(e) | 2022-10-01 | Online + Physical | ✅ | ✅ `test_complete_high_quality_listing_passes_core_rules`, `test_missing_mrp_on_complete_listing_is_potential_non_compliance`, `test_missing_mrp_with_no_evidence_at_all_is_unable_to_verify`, `test_missing_mrp_with_partial_low_quality_evidence_needs_manual_review` |
-| **Rule 6(2)** — Consumer-care details (`LMPC-R6-2-CONSUMER-CARE`) | LMPC Rules 2011, Rule 6(2) | 2016-01-01 | Online + Physical | ✅ | ✅ `test_consumer_care_passes_with_name_and_phone` |
+| **Rule 6(2)** — Consumer-care details (`LMPC-R6-2-CONSUMER-CARE`) | LMPC Rules 2011, Rule 6(2) | 2016-01-01 | Online + Physical | ✅ *(corrected 2026-08-28: all four of name/address/phone/email required, not phone-OR-email)* | ✅ `test_consumer_care_passes_only_with_all_four_fields`, `test_consumer_care_name_and_phone_alone_is_not_a_pass`, `test_consumer_care_one_field_missing_under_strong_evidence_is_potential_non_compliance`, `test_consumer_care_no_evidence_at_all_is_unable_to_verify`, `test_consumer_care_missing_fields_with_low_ocr_confidence_needs_manual_review` |
 | **Rule 6(10)** — E-commerce mandatory display of Rule 6(1)/6(2) declarations (`LMPC-R6-10-ECOMMERCE-DISPLAY`) | LMPC Rules 2011, Rule 6(10) | 2018-01-01 | **Online only** | ✅ | ✅ `test_ecommerce_display_rule_not_applicable_for_manual_photo_only_inspection` |
-| **Rule 6(11)** — Unit sale price (`LMPC-R6-11-UNIT-SALE-PRICE`) | LMPC Rules 2011, Rule 6(11) | 2022-10-01 | Online + Physical | ✅ *(always routed to officer — arithmetic verification (RSP ÷ net quantity) is out of scope for a regex/keyword engine)* | ✅ `test_unit_sale_price_is_always_routed_for_manual_review` |
+| **Rule 6(11)** — Unit sale price (`LMPC-R6-11-UNIT-SALE-PRICE`) | LMPC Rules 2011, Rule 6(11) | 2022-10-01 | Online + Physical | ✅ *(improved 2026-08-28: deterministic PASS when declared unit sale price equals RSP, per the express exception; otherwise still routed to officer, with evidence-quality-aware escalation on a multi-pack hint)* | ✅ `test_unit_sale_price_is_always_routed_for_manual_review`, `test_unit_sale_price_equal_to_mrp_passes`, `test_unit_sale_price_different_from_mrp_does_not_auto_pass`, `test_unit_sale_price_multipack_hint_missing_price_under_strong_evidence_is_potential_non_compliance`, `test_unit_sale_price_no_evidence_at_all_is_unable_to_verify` |
 | **Rule 9(1), 9(4)** — Manner of declaration (legible/prominent/correct script) (`LMPC-R9-MANNER`) | LMPC Rules 2011, Rule 9(1), 9(4) | 2011-04-01 | Online + Physical | ✅ *(always routed to officer — a visual/legibility judgment, not automatable)* | ✅ `test_manner_of_declaration_is_always_routed_for_manual_review` |
-| **Rule 10(1), 10(2)** — Name/address form & completeness (`LMPC-R10-NAME-ADDR-FORM`) | LMPC Rules 2011, Rule 10(1), 10(2) | 2018-01-01 | Online + Physical | ✅ | ✅ `test_name_address_form_passes_with_a_pin_coded_address` |
+| **Rule 10(1), 10(2)** — Name/address form & completeness (`LMPC-R10-NAME-ADDR-FORM`) | LMPC Rules 2011, Rule 10(1), 10(2) | 2018-01-01 | Online + Physical | ✅ *(corrected 2026-08-28: requires PIN AND locality, not PIN OR locality)* | ✅ `test_name_address_form_passes_with_a_pin_coded_address`, `test_name_address_form_pin_code_alone_is_not_a_pass`, `test_name_address_form_locality_words_alone_without_pin_needs_manual_review`, `test_name_address_form_short_ambiguous_address_is_never_auto_failed`, `test_name_address_form_no_address_at_all_uses_absence_path` |
 | **Rule 11(1)-(3)** — Net quantity computed on commodity only, "when packed" disallowed (`LMPC-R11-QTY-BASIS`) | LMPC Rules 2011, Rule 11(1)-(3) | 2011-04-01 | Online + Physical | ✅ | ✅ `test_when_packed_qualifier_is_flagged_as_potential_non_compliance` |
 | **Rule 26(a)** — Small-package exemption gate (`LMPC-R26-EXEMPT-SMALL`) | LMPC Rules 2011, Rule 26(a) | 2015-07-01 | Online + Physical (gating logic — not a standalone finding) | ✅ | ✅ `test_small_package_exemption_gates_other_rules_not_applicable` |
+| **Rule 26(b)** — Restaurant/hotel-packed fast food exemption (`LMPC-R26-EXEMPT-FAST-FOOD`) | LMPC Rules 2011, Rule 26(b) | 2011-04-01 | Online + Physical | ✅ *(never a confident exemption — keyword hint only gates NOT_APPLICABLE vs NEEDS_MANUAL_REVIEW)* | ✅ `test_rule26b_fast_food_not_applicable_for_ordinary_product`, `test_rule26b_fast_food_hint_needs_manual_review_not_confident_exemption` |
+| **Rule 26(c)** — Certain drug formulations exemption (`LMPC-R26-EXEMPT-DRUG-FORMULATIONS`) | LMPC Rules 2011, Rule 26(c) | 2011-04-01 | Online + Physical | ✅ *(never classifies a drug formulation from OCR keywords alone)* | ✅ `test_rule26c_drug_formulation_not_applicable_for_ordinary_product`, `test_rule26c_drug_keyword_hint_never_becomes_a_confident_exemption` |
+| **Rule 26(e)** — Thread coil to handloom weavers exemption (`LMPC-R26-EXEMPT-THREAD-COIL`) | LMPC Rules 2011, Rule 26(e) | 2011-04-01 | Online + Physical | ✅ *(never a confident exemption from OCR keywords alone)* | ✅ `test_rule26e_thread_coil_not_applicable_for_ordinary_product`, `test_rule26e_thread_coil_hint_needs_manual_review` |
+| **Rule 31(1)-(2)** — Advertisement mentioning RSP must also declare net quantity (`LMPC-R31-ADVERTISEMENT-NET-QTY`) | LMPC Rules 2011, Rule 31(1)-(2) | 2011-04-01 | **Online only** | ✅ *(net-quantity presence is deterministic; font-size equality is never claimed verified — best outcome once both are present is NEEDS_MANUAL_REVIEW)* | ✅ `test_rule31_not_applicable_when_no_rsp_displayed`, `test_rule31_not_applicable_for_manual_photo_only_inspection`, `test_rule31_rsp_and_net_quantity_present_needs_manual_review_for_font_size`, `test_rule31_rsp_displayed_without_net_quantity_is_potential_non_compliance` |
 | MRP consistency, listing vs. image (`LMSCAN-CONSISTENCY-MRP`) ² | LM-SCAN internal engineering rule (Section 14) — not a Rules citation | 2026-01-01 | Online + Physical (cross-source) | ✅ | ✅ `test_mrp_inconsistency_between_listing_and_image_is_flagged`, `test_mrp_agreement_between_listing_and_image_passes` |
 | Net quantity consistency, listing vs. image (`LMSCAN-CONSISTENCY-NET-QUANTITY`) ² | LM-SCAN internal engineering rule (Section 14) | 2026-01-01 | Online + Physical (cross-source) | ✅ | ✅ `test_net_quantity_inconsistency_between_listing_and_image_is_flagged` |
 | Product name consistency, listing vs. image (`LMSCAN-CONSISTENCY-PRODUCT-NAME`) ² | LM-SCAN internal engineering rule (Section 14) | 2026-01-01 | Online + Physical (cross-source) | ✅ | ✅ `test_product_name_inconsistency_between_listing_and_image_is_flagged` |
@@ -77,18 +80,22 @@ re-check this matrix whenever a rule in `seed_rules.py` changes.
 | Importer consistency, listing vs. image (`LMSCAN-CONSISTENCY-IMPORTER`) ² | LM-SCAN internal engineering rule (Section 14) | 2026-01-01 | Online + Physical (cross-source) | ✅ | ✅ `test_importer_inconsistency_between_listing_and_image_is_flagged` |
 | Country-of-origin consistency, listing vs. image (`LMSCAN-CONSISTENCY-COUNTRY-ORIGIN`) ² | LM-SCAN internal engineering rule (Section 14) | 2026-01-01 | Online + Physical (cross-source) | ✅ | ✅ `test_country_of_origin_inconsistency_between_listing_and_image_is_flagged` |
 
-¹ **New this revision.** Sourced from secondary legal-update publications,
-cross-corroborated across four independent sources for the gazette
-numbers/dates/rule number (SCC Online, Mondaq, TeamLease RegTech, Digital
-Policy Alert) but not from the primary e-Gazette PDF directly — see the
-caveat in `docs/legal-rules.md`'s `LMPC-R6-10A-COO-FILTER` entry before
-relying on the exact operative wording in a legal proceeding. Also note:
-LM-SCAN can only verify the *declaration* prerequisite (is country of
-origin extractable from the listing at all) — never the platform's actual
-searchable/sortable filter widget, which is outside what a page-content
-scraper can assess. It therefore **never reports a confident PASS** on
-this rule; the best automated outcome is `NEEDS_MANUAL_REVIEW` ("officer,
-please confirm the filter itself exists on the platform").
+¹ **Removed, 2026-08-28.** This row previously claimed a "Rule 6(10A)"
+searchable/sortable country-of-origin filter requirement for e-commerce
+listings of imported products, attributed to a "Legal Metrology (Packaged
+Commodities) Amendment Rules, 2026" and "Second Amendment Rules, 2026." It
+was sourced from secondary legal-update publications (SCC Online, Mondaq,
+TeamLease RegTech, Digital Policy Alert), not from the supplied
+consolidated PDF, and the primary e-Gazette text was never independently
+retrieved. It has been removed because it is not supported by the
+authoritative supplied specification (`docs/Legal_Metrology_Rules_Corrected.md`),
+which recognizes only amendments up to and including G.S.R. 226(E) dated 28
+March 2022. The database row (`Rule.rule_key = "LMPC-R6-10A-COO-FILTER"`)
+has been deactivated, not deleted, per the standing "do not silently
+remove existing rules" policy — its version history remains queryable. Do
+not reintroduce this or any other country-of-origin e-commerce filter
+requirement unless it is supported by the authoritative supplied source
+document.
 
 ² Not a citation to the Legal Metrology (Packaged Commodities) Rules,
 2011 — these five implement the product brief's Section 14 cross-source
@@ -108,21 +115,35 @@ seeded, so there is nothing to add to this matrix for them. Rule 6(1)(f)
 ("month and year up to which the commodity is best used", where distinct
 from 6(1)(da)) and Rules 12–24 generally were likewise judged out of the
 online-listing-checkable set at the time `docs/legal-rules.md` was
-authored; this revision did not re-audit those beyond the specific
-country-of-origin question the 2026 amendment raised. A full re-audit of
-every rule 6–24 against the current (2026) gazette text is a larger task
-than this revision's scope and would be a reasonable next step if a
-courtroom-grade traceability claim is needed for the whole rule 3–30 range,
-not just the online country-of-origin question.
+authored. A full re-audit of every rule 6–34 against
+`docs/Legal_Metrology_Rules_Corrected.md` (the current authoritative
+specification) is tracked incrementally rather than done in one pass; see
+Revision history for what each pass covered.
 
 ## Revision history
 
+- **2026-08-28**: **Correction.** Removed `LMPC-R6-10A-COO-FILTER` (added
+  2026-08-26, below) after an audit against the corrected authoritative
+  specification (`docs/Legal_Metrology_Rules_Corrected.md`) found it was
+  not supported by the supplied consolidated PDF — it had been sourced from
+  secondary legal-update publications and an unverified primary-gazette
+  citation, which the authoritative specification does not corroborate.
+  The database row was deactivated (`Rule.active = False`), not deleted.
+  Also implemented, in the same pass, per the corrected specification: the
+  Rule 6(2) consumer-care all-four-fields-required correction, the Rule 10
+  address-completeness heuristic correction, Rule 3 (Chapter II
+  applicability gate), Rule 26(b)/(c)/(e) exemption gates, Rule 31
+  (advertisement RSP + net quantity), and a deterministic Rule 6(11)
+  RSP-equals-unit-price assist. See `docs/legal-rules.md` for the
+  rule-by-rule detail and this file's rows above for test coverage.
 - **2026-08-26**: Added Rule 6(10A) (2026 e-commerce country-of-origin
   searchable/sortable filter, imported products only) after web research
   corrected an earlier, imprecisely-cited assumption that a broader
   "domestic products too" e-commerce country-of-origin duty existed under
   Rule 6(1)(aa) itself — reverted that speculative behavior and replaced it
-  with the real, precisely-dated, distinctly-numbered rule. Backfilled
+  with the real, precisely-dated, distinctly-numbered rule. **(Superseded
+  by the 2026-08-28 correction above: this rule turned out itself not to be
+  traceable to the authoritative source and was removed.)** Backfilled
   dedicated tests for every previously-untested rule (`LMPC-R6-1D-MFG-DATE`,
   `LMPC-R6-2-CONSUMER-CARE`, `LMPC-R6-11-UNIT-SALE-PRICE`, `LMPC-R9-MANNER`,
   `LMPC-R10-NAME-ADDR-FORM`, `LMPC-R11-QTY-BASIS`, and all five

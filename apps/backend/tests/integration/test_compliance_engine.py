@@ -154,11 +154,11 @@ def test_country_of_origin_not_applicable_for_domestic_online_listing(db: Sessio
     origin is NOT_APPLICABLE under Rule 6(1)(aa), which is strictly
     imported-products-only and does not extend to domestic products (an
     earlier version of this test/handler speculated a broader e-commerce
-    policy obligation here, citing a general 2020 DPIIT direction that
-    could not be precisely verified; that speculation has been removed —
-    see LMPC-R6-10A-COO-FILTER for the real, precisely-cited 2026
-    e-commerce country-of-origin requirement, which is *also*
-    imported-products-only)."""
+    policy obligation here -- first citing a general 2020 DPIIT direction,
+    later a purported "Rule 6(10A)" 2026 amendment -- neither citation
+    could be traced to the authoritative supplied source, and both have
+    been removed; see the 2026-08-28 correction note on
+    `LMPC-R6-10A-COO-FILTER`'s removal in app/rules/seed_rules.py)."""
     inspection = _inspection(db, inspector_user)
     wp = _webpage(db, inspection)
     _declare(db, inspection, wp, "manufacturer_name", "Local Foods Pvt Ltd")
@@ -167,42 +167,18 @@ def test_country_of_origin_not_applicable_for_domestic_online_listing(db: Sessio
     assert check.status == ComplianceStatus.NOT_APPLICABLE.value
 
 
-def test_coo_filter_rule_not_applicable_for_domestic_product(db: Session, inspector_user: User, loaded_rules):
-    """Rule 6(10A) (2026 e-commerce country-of-origin filter requirement)
-    is imported-products-only, same as Rule 6(1)(aa) -- a domestic product
-    must not be flagged under it."""
-    inspection = _inspection(db, inspector_user)
-    wp = _webpage(db, inspection)
-    _declare(db, inspection, wp, "manufacturer_name", "Local Foods Pvt Ltd")
-    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
-    check = _check_for(checks, db, "LMPC-R6-10A-COO-FILTER")
-    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
-
-
-def test_coo_filter_rule_flags_missing_declaration_for_imported_product(db: Session, inspector_user: User, loaded_rules):
-    """An imported product's online listing with no country-of-origin
-    declaration at all fails Rule 6(10A)'s declaration prerequisite."""
-    inspection = _inspection(db, inspector_user)
-    wp = _webpage(db, inspection)
-    _declare(db, inspection, wp, "importer_name", "Global Traders Pvt Ltd")
-    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
-    check = _check_for(checks, db, "LMPC-R6-10A-COO-FILTER")
-    assert check.status in (ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value, ComplianceStatus.NEEDS_MANUAL_REVIEW.value)
-
-
-def test_coo_filter_rule_needs_review_when_declared_but_filter_unverifiable(db: Session, inspector_user: User, loaded_rules):
-    """Even with country of origin declared for an imported product's
-    listing, Rule 6(10A) also requires an actual searchable/sortable filter
-    on the platform -- something LM-SCAN cannot verify from page content,
-    so this must never claim a confident PASS on the rule."""
+def test_lmpc_r6_10a_coo_filter_is_not_an_active_rule(db: Session, inspector_user: User, loaded_rules):
+    """The purported 'Rule 6(10A)' country-of-origin filter requirement was
+    removed (2026-08-28 correction, not traceable to the authoritative
+    supplied source) and must not produce a ComplianceCheck for any
+    inspection."""
     inspection = _inspection(db, inspector_user)
     wp = _webpage(db, inspection)
     _declare(db, inspection, wp, "importer_name", "Global Traders Pvt Ltd")
     _declare(db, inspection, wp, "country_of_origin", "China")
     checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
-    check = _check_for(checks, db, "LMPC-R6-10A-COO-FILTER")
-    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
-    assert check.status != ComplianceStatus.PASS.value
+    with pytest.raises(AssertionError):
+        _check_for(checks, db, "LMPC-R6-10A-COO-FILTER")
 
 
 def test_country_of_origin_not_applicable_for_domestic_physical_only_inspection(db: Session, inspector_user: User, loaded_rules):
@@ -258,6 +234,221 @@ def test_small_package_exemption_gates_other_rules_not_applicable(db: Session, i
     check = _check_for(checks, db, "LMPC-R6-1A-MFR-NAME")
     assert check.status == ComplianceStatus.NOT_APPLICABLE.value
     assert "26(a)" in check.reason
+
+
+def test_rule3_ordinary_retail_package_is_not_gated(db: Session, inspector_user: User, loaded_rules):
+    """An ordinary small retail package (well under any Rule 3 threshold)
+    must not be gated NOT_APPLICABLE by the Chapter II applicability gate --
+    Chapter II applies normally, so a missing declaration is still a
+    genuine finding."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "net_quantity", "200 g", normalized="200g")
+    # No manufacturer declared -- should be a genuine finding, not NOT_APPLICABLE via Rule 3.
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1A-MFR-NAME")
+    assert check.status != ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule3_quantity_between_25_and_50kg_is_not_confidently_exempted(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """Corrected Rule 3 (docs/Legal_Metrology_Rules_Corrected.md Section 3 /
+    Section 18 Correction 4): a flat '>25kg = exempt' test is explicitly
+    wrong, because cement/fertilizer/agricultural farm produce sold in bags
+    remain covered by Chapter II up to 50kg. LM-SCAN has no commodity-type
+    classifier, so a plain 30kg declaration (ambiguous -- could be an
+    ordinary item or an undetectable bagged commodity) must NOT be
+    confidently gated NOT_APPLICABLE; Chapter II continues to apply rather
+    than risking a false exemption."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "net_quantity", "30 kg", normalized="30kg")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1A-MFR-NAME")
+    assert check.status != ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule3_quantity_above_25_litre_is_exempt(db: Session, inspector_user: User, loaded_rules):
+    """Liquids have no bagged-commodity carve-out in the specification, so
+    > 25 litre is an unambiguous Rule 3 Chapter II exemption."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "net_quantity", "30 litre", normalized="30l")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1A-MFR-NAME")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+    assert "Rule 3" in check.reason
+
+
+def test_rule3_quantity_above_50kg_is_exempt_even_for_bagged_commodities(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """Above 50kg, Chapter II does not apply regardless of commodity type --
+    this is the ceiling that specifically matters for cement, fertilizer,
+    and agricultural farm produce sold in bags (their carve-out only
+    extends coverage up to 50kg, not beyond it)."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "net_quantity", "60 kg", normalized="60kg")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1A-MFR-NAME")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+    assert "Rule 3" in check.reason
+
+
+def test_rule3_industrial_use_only_listing_is_exempt_regardless_of_quantity(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """An explicit 'for industrial use only' self-description exempts the
+    package under Rule 3 regardless of declared quantity."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Bulk Solvent Drum - For Industrial Use Only")
+    _declare(db, inspection, wp, "net_quantity", "5 kg", normalized="5kg")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1A-MFR-NAME")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+    assert "Rule 3" in check.reason
+
+
+def test_rule3_insufficient_evidence_does_not_gate_as_exempt(db: Session, inspector_user: User, loaded_rules):
+    """No net quantity declared at all and no institutional/industrial
+    indication: Rule 3 cannot determine applicability either way, so it
+    must not gate other rules NOT_APPLICABLE -- they proceed to their own
+    normal (evidence-quality-aware) evaluation instead of a false
+    exemption."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "manufacturer_name", "Acme Foods Pvt Ltd")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-1E-MRP")
+    assert check.status != ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule26b_fast_food_not_applicable_for_ordinary_product(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Tasty Munch Potato Chips 100g")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R26-EXEMPT-FAST-FOOD")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule26b_fast_food_hint_needs_manual_review_not_confident_exemption(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """A restaurant/fast-food keyword hint must route to NEEDS_MANUAL_REVIEW,
+    never a confident exemption LM-SCAN cannot actually verify."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Hot & Fresh Fast Food Combo Meal - Packed by Spice Route Restaurant")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R26-EXEMPT-FAST-FOOD")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_rule26c_drug_formulation_not_applicable_for_ordinary_product(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Shine Bathroom Cleaner 500ml")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R26-EXEMPT-DRUG-FORMULATIONS")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule26c_drug_keyword_hint_never_becomes_a_confident_exemption(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """Corrected Rule 26(c): 'Do not classify a product as a qualifying drug
+    formulation using OCR keywords alone.' A drug-suggestive keyword must
+    route to NEEDS_MANUAL_REVIEW, never PASS/NOT_APPLICABLE/a confident
+    exemption asserted purely from the keyword."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Paracetamol Tablets IP 500mg")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.OTHER)
+    check = _check_for(checks, db, "LMPC-R26-EXEMPT-DRUG-FORMULATIONS")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_rule26e_thread_coil_not_applicable_for_ordinary_product(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Tasty Munch Potato Chips 100g")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R26-EXEMPT-THREAD-COIL")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule26e_thread_coil_hint_needs_manual_review(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Cotton Thread Coil for Handloom Weavers - 500g")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.OTHER)
+    check = _check_for(checks, db, "LMPC-R26-EXEMPT-THREAD-COIL")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_rule31_not_applicable_when_no_rsp_displayed(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Tasty Munch Potato Chips 100g")
+    _declare(db, inspection, wp, "net_quantity", "100 g", normalized="100g")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R31-ADVERTISEMENT-NET-QTY")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule31_not_applicable_for_manual_photo_only_inspection(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    inspection.source_url = None
+    db.commit()
+    image = ProductImage(
+        inspection_id=inspection.id, source_type="USER_INPUT", storage_path="manual.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc),
+    )
+    db.add(image)
+    db.commit()
+    _declare(db, inspection, None, "mrp", "Rs. 60.00", source_type=DeclarationSourceType.IMAGE_OCR, normalized="60.00")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R31-ADVERTISEMENT-NET-QTY")
+    assert check.status == ComplianceStatus.NOT_APPLICABLE.value
+
+
+def test_rule31_rsp_and_net_quantity_present_needs_manual_review_for_font_size(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """Corrected Rule 31: even when the deterministic net-quantity presence
+    sub-requirement is satisfied, font-size equality between the RSP and
+    net-quantity numerals can never be verified from scraped page content,
+    so this must never report a full PASS."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "mrp", "Rs. 60.00", normalized="60.00")
+    _declare(db, inspection, wp, "net_quantity", "100 g", normalized="100g")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R31-ADVERTISEMENT-NET-QTY")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_rule31_rsp_displayed_without_net_quantity_is_potential_non_compliance(
+    db: Session, inspector_user: User, loaded_rules
+):
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Shine Bathroom Cleaner 500ml")
+    _declare(db, inspection, wp, "manufacturer_name", "Shine Chemicals Pvt Ltd")
+    _declare(db, inspection, wp, "manufacturer_address", "Sector 5, Gurugram, Haryana 122001")
+    _declare(db, inspection, wp, "mrp", "Rs. 60.00", normalized="60.00")
+    db.add(ProductImage(
+        inspection_id=inspection.id, source_type="ONLINE_LISTING", storage_path="ad.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc),
+    ))
+    db.commit()
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R31-ADVERTISEMENT-NET-QTY")
+    assert check.status == ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
 
 
 def test_mrp_inconsistency_between_listing_and_image_is_flagged(db: Session, inspector_user: User, loaded_rules):
@@ -344,14 +535,89 @@ def test_mfg_date_passes_when_a_date_like_value_is_declared(db: Session, inspect
     assert check.status == ComplianceStatus.PASS.value
 
 
-def test_consumer_care_passes_with_name_and_phone(db: Session, inspector_user: User, loaded_rules):
+def test_consumer_care_passes_only_with_all_four_fields(db: Session, inspector_user: User, loaded_rules):
+    """Corrected Rule 6(2): name, address, telephone, AND e-mail are each
+    independently required -- none substitutes for another (docs/
+    Legal_Metrology_Rules_Corrected.md Section 18 Correction 1)."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "consumer_care_name", "Acme Consumer Care")
+    _declare(db, inspection, wp, "consumer_care_address", "MG Road, Bengaluru - 560001, Karnataka")
+    _declare(db, inspection, wp, "consumer_care_phone", "1800-22-4020")
+    _declare(db, inspection, wp, "consumer_care_email", "care@acme.example")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-2-CONSUMER-CARE")
+    assert check.status == ComplianceStatus.PASS.value
+
+
+def test_consumer_care_name_and_phone_alone_is_not_a_pass(db: Session, inspector_user: User, loaded_rules):
+    """Regression for the corrected behavior: name+phone alone (missing
+    address and email) must NOT pass -- a prior, incorrect version of this
+    validator treated phone/email and name/address as interchangeable
+    pairs. With otherwise-strong evidence (a successfully fetched listing
+    page), two missing required fields is a genuine gap, not a hollow
+    review item."""
     inspection = _inspection(db, inspector_user)
     wp = _webpage(db, inspection)
     _declare(db, inspection, wp, "consumer_care_name", "Acme Consumer Care")
     _declare(db, inspection, wp, "consumer_care_phone", "1800-22-4020")
     checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
     check = _check_for(checks, db, "LMPC-R6-2-CONSUMER-CARE")
-    assert check.status == ComplianceStatus.PASS.value
+    assert check.status == ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
+
+
+def test_consumer_care_one_field_missing_under_strong_evidence_is_potential_non_compliance(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """Only e-mail missing, otherwise-complete listing -> a single missing
+    required field under strong evidence is still a genuine gap."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "consumer_care_name", "Acme Consumer Care")
+    _declare(db, inspection, wp, "consumer_care_address", "MG Road, Bengaluru - 560001, Karnataka")
+    _declare(db, inspection, wp, "consumer_care_phone", "1800-22-4020")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-2-CONSUMER-CARE")
+    assert check.status == ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
+
+
+def test_consumer_care_no_evidence_at_all_is_unable_to_verify(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    _webpage(db, inspection, status=WebFetchStatus.FAILED.value)
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-2-CONSUMER-CARE")
+    assert check.status == ComplianceStatus.UNABLE_TO_VERIFY.value
+
+
+def test_consumer_care_missing_fields_with_low_ocr_confidence_needs_manual_review(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """Multiple fields missing, but the only evidence available is a
+    low-quality screenshot with poor OCR confidence -> NEEDS_MANUAL_REVIEW,
+    not a confident POTENTIAL_NON_COMPLIANCE (uncertain OCR must not become
+    an automatic violation)."""
+    from app.models.scraping import OCRResult
+
+    inspection = _inspection(db, inspector_user)
+    _webpage(db, inspection, status=WebFetchStatus.FAILED.value)
+
+    image = ProductImage(
+        inspection_id=inspection.id, source_type="USER_INPUT", storage_path="low_quality.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc), quality_acceptable=False,
+    )
+    db.add(image)
+    db.flush()
+    db.add(OCRResult(
+        product_image_id=image.id, engine="tesseract", engine_version="5.4",
+        text="...", confidence=0.15, bounding_box={"x": 0, "y": 0, "width": 5, "height": 5},
+        created_at=dt.datetime.now(dt.timezone.utc),
+    ))
+    _declare(db, inspection, None, "consumer_care_name", "Acme Consumer Care", source_type=DeclarationSourceType.IMAGE_OCR, confidence=0.4)
+    db.commit()
+
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-2-CONSUMER-CARE")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
 
 
 def test_unit_sale_price_is_always_routed_for_manual_review(db: Session, inspector_user: User, loaded_rules):
@@ -364,6 +630,62 @@ def test_unit_sale_price_is_always_routed_for_manual_review(db: Session, inspect
     checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
     check = _check_for(checks, db, "LMPC-R6-11-UNIT-SALE-PRICE")
     assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_unit_sale_price_equal_to_mrp_passes(db: Session, inspector_user: User, loaded_rules):
+    """Corrected Rule 6(11): unit sale price is not required where the
+    retail sale price equals the unit sale price -- the specification's
+    express, narrow exception (not a blanket 'single item = exempt' rule)."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "mrp", "Rs. 60.00", normalized="60.00")
+    _declare(db, inspection, wp, "unit_sale_price", "Rs. 60.00", normalized="60.00")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-11-UNIT-SALE-PRICE")
+    assert check.status == ComplianceStatus.PASS.value
+
+
+def test_unit_sale_price_different_from_mrp_does_not_auto_pass(db: Session, inspector_user: User, loaded_rules):
+    """A declared unit sale price that does NOT equal MRP does not qualify
+    for the express exception -- falls through to the standard manual-
+    review default (LM-SCAN still can't verify the RSP/net-quantity
+    arithmetic itself)."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "mrp", "Rs. 60.00", normalized="60.00")
+    _declare(db, inspection, wp, "unit_sale_price", "Rs. 12.00", normalized="12.00")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-11-UNIT-SALE-PRICE")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_unit_sale_price_multipack_hint_missing_price_under_strong_evidence_is_potential_non_compliance(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """A multi-pack hint with no distinct unit sale price found, under
+    otherwise-strong evidence, is now evidence-quality-aware (can escalate
+    to POTENTIAL_NON_COMPLIANCE) instead of a fixed NEEDS_MANUAL_REVIEW
+    regardless of evidence quality."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "product_name", "Snack Bar Pack of 6")
+    _declare(db, inspection, wp, "mrp", "Rs. 120.00", normalized="120.00")
+    db.add(ProductImage(
+        inspection_id=inspection.id, source_type="ONLINE_LISTING", storage_path="pack.png",
+        downloaded_at=dt.datetime.now(dt.timezone.utc),
+    ))
+    db.commit()
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.FOOD)
+    check = _check_for(checks, db, "LMPC-R6-11-UNIT-SALE-PRICE")
+    assert check.status == ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
+
+
+def test_unit_sale_price_no_evidence_at_all_is_unable_to_verify(db: Session, inspector_user: User, loaded_rules):
+    inspection = _inspection(db, inspector_user)
+    _webpage(db, inspection, status=WebFetchStatus.FAILED.value)
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R6-11-UNIT-SALE-PRICE")
+    assert check.status == ComplianceStatus.UNABLE_TO_VERIFY.value
 
 
 def test_manner_of_declaration_is_always_routed_for_manual_review(db: Session, inspector_user: User, loaded_rules):
@@ -386,6 +708,65 @@ def test_name_address_form_passes_with_a_pin_coded_address(db: Session, inspecto
     checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
     check = _check_for(checks, db, "LMPC-R10-NAME-ADDR-FORM")
     assert check.status == ComplianceStatus.PASS.value
+
+
+def test_name_address_form_pin_code_alone_is_not_a_pass(db: Session, inspector_user: User, loaded_rules):
+    """Corrected Rule 10 heuristic: a bare PIN code with no locality/city
+    token is NOT sufficient on its own -- the previous validator's
+    'PIN OR city+state' test is exactly what docs/Legal_Metrology_Rules_Corrected.md
+    Section 18 Correction 2 names as incorrect. This must route to manual
+    review, not be auto-passed and not be auto-failed."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "manufacturer_address", "122002")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R10-NAME-ADDR-FORM")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_name_address_form_locality_words_alone_without_pin_needs_manual_review(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """A 'word, word' locality pattern with no PIN code is also not
+    sufficient alone -- same correction, the other half of the old
+    either/or test."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "manufacturer_address", "Some Street, Some City")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R10-NAME-ADDR-FORM")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+
+
+def test_name_address_form_short_ambiguous_address_is_never_auto_failed(
+    db: Session, inspector_user: User, loaded_rules
+):
+    """A short/ambiguous address must route to NEEDS_MANUAL_REVIEW, never
+    a confident POTENTIAL_NON_COMPLIANCE, since it may be a legitimately
+    registered Rule 28 shorter address that this heuristic cannot
+    distinguish from an incomplete one -- even with otherwise-strong
+    evidence (a successfully fetched listing page) that would normally
+    push an absence-style finding toward POTENTIAL_NON_COMPLIANCE."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "manufacturer_address", "Unit 4, Industrial Estate")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R10-NAME-ADDR-FORM")
+    assert check.status == ComplianceStatus.NEEDS_MANUAL_REVIEW.value
+    assert check.status != ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
+
+
+def test_name_address_form_no_address_at_all_uses_absence_path(db: Session, inspector_user: User, loaded_rules):
+    """Complete absence of any address is a different case from a short/
+    ambiguous one -- it still goes through the standard evidence-quality-
+    aware absence logic and can become POTENTIAL_NON_COMPLIANCE under
+    strong evidence."""
+    inspection = _inspection(db, inspector_user)
+    wp = _webpage(db, inspection)
+    _declare(db, inspection, wp, "manufacturer_name", "Acme Foods Pvt Ltd")
+    checks = run_compliance_checks(db, inspection, ProductCategoryCode.HOUSEHOLD)
+    check = _check_for(checks, db, "LMPC-R10-NAME-ADDR-FORM")
+    assert check.status == ComplianceStatus.POTENTIAL_NON_COMPLIANCE.value
 
 
 def test_when_packed_qualifier_is_flagged_as_potential_non_compliance(db: Session, inspector_user: User, loaded_rules):

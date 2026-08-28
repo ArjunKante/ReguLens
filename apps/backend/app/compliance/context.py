@@ -30,6 +30,13 @@ class InspectionContext:
     ocr_results: list[OCRResult]
     is_tobacco_product: bool = False
     origin_status: OriginStatus = "UNKNOWN"
+    institutional_or_industrial_context: bool = False
+    """True only when listing/product text explicitly self-describes as an
+    industrial- or institutional-consumer package (see
+    app/nlp/classification.py::is_institutional_or_industrial_context).
+    Used only by the Rule 3 Chapter II applicability gate. False means
+    "no such statement was found," not "confirmed ordinary consumer
+    retail" -- it must never be read as a positive finding on its own."""
 
     _by_field: dict[str, list[Declaration]] = field(default_factory=dict, init=False, repr=False)
 

@@ -84,3 +84,36 @@ def is_tobacco_product(*text_fragments: str | None) -> bool:
     NOT apply to tobacco/tobacco products regardless of package size."""
     text = " ".join(f for f in text_fragments if f).lower()
     return any(kw in text for kw in _TOBACCO_KEYWORDS)
+
+
+# Used only by the Rule 3 Chapter II applicability gate (LMPC-R3-APPLICABILITY)
+# for its "industrial consumer or institutional consumer" exemption. Same
+# narrow, literal, auditable keyword-match approach as `is_tobacco_product`
+# above -- not a speculative buyer-type classifier. A marketplace listing
+# almost never states who is buying it; this only fires when the listing
+# text itself explicitly says so (e.g. a bulk/HORECA/industrial-only pack),
+# which is the only case this kind of evidence could ever exist in scraped
+# listing/product text. Absence of a match means "unknown", not "consumer
+# retail" -- callers must not treat a False here as a positive finding that
+# the product IS a consumer retail package.
+_INSTITUTIONAL_INDUSTRIAL_KEYWORDS = [
+    "industrial use only",
+    "for industrial use",
+    "not for retail sale",
+    "not for individual sale",
+    "institutional pack",
+    "institutional use only",
+    "for institutional use",
+    "horeca",
+    "bulk pack for institutional",
+    "catering pack",
+]
+
+
+def is_institutional_or_industrial_context(*text_fragments: str | None) -> bool:
+    """Used only by the Rule 3 Chapter II applicability gate. Returns True
+    only when the listing/product text explicitly self-describes as an
+    industrial- or institutional-consumer package; never inferred from
+    package size, price, or any other proxy."""
+    text = " ".join(f for f in text_fragments if f).lower()
+    return any(kw in text for kw in _INSTITUTIONAL_INDUSTRIAL_KEYWORDS)

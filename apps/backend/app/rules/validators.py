@@ -19,6 +19,7 @@ from dateutil import parser as dateutil_parser
 from app.compliance.context import InspectionContext
 from app.compliance.outcome import EvidenceRef, ValidationOutcome
 from app.models.enums import ComplianceStatus
+from app.nlp.normalization import normalize_currency
 from app.rules import fields as F
 from app.rules.quantity import parse_net_quantity
 
@@ -210,6 +211,10 @@ def date_check(config: dict, ctx: InspectionContext) -> ValidationOutcome:
     )
 
 
+def _declared_text_haystack(ctx: InspectionContext, field_names: list[str]) -> str:
+    return " ".join(v.value or "" for f in field_names for v in ctx.values_for(f))
+
+
 def manual_review_check(config: dict, ctx: InspectionContext) -> ValidationOutcome:
     if not ctx.has_sufficient_evidence:
         return ValidationOutcome(
@@ -217,6 +222,34 @@ def manual_review_check(config: dict, ctx: InspectionContext) -> ValidationOutco
             reason="No page content or images were retrieved for this inspection.",
             confidence=0.3,
         )
+
+    # Optional applicability gate: some MANUAL_REVIEW_CHECK rules describe an
+    # exemption condition (e.g. Rule 26(c) drug formulations, Rule 26(e)
+    # thread coil sold to handloom weavers) that is narrow enough that most
+    # products clearly don't relate to it at all. Rather than routing EVERY
+    # inspection to manual review for questions that plainly don't apply
+    # (noisy and useless), a narrow keyword hint decides whether the
+    # condition is even plausibly in play. Critically, this only ever
+    # widens the set of things routed to NEEDS_MANUAL_REVIEW -- it never
+    # asserts a confident exemption from the keyword hint itself (that
+    # would be exactly the "classify a qualifying drug formulation from OCR
+    # keywords alone" mistake the specification warns against). Absence of
+    # the hint yields NOT_APPLICABLE (a claim only that this narrow
+    # exemption doesn't plausibly relate to this product -- not a claim
+    # about drug/thread status itself); presence of the hint always yields
+    # NEEDS_MANUAL_REVIEW, never PASS or a confident exemption.
+    hint_patterns = config.get("applicability_hint_patterns")
+    if hint_patterns:
+        haystack = _declared_text_haystack(ctx, config.get("applicability_hint_fields", [F.PRODUCT_NAME]))
+        if not any(re.search(p, haystack, re.IGNORECASE) for p in hint_patterns):
+            return ValidationOutcome(
+                status=ComplianceStatus.NOT_APPLICABLE,
+                reason=config.get(
+                    "applicability_absent_reason",
+                    "No evidence was found that this exemption condition applies to this product.",
+                ),
+                confidence=0.6,
+            )
 
     reason = config.get("reason_default", "This requirement needs human judgment and is routed for officer review.")
 
@@ -254,17 +287,16 @@ def _country_of_origin_gate(config: dict, ctx: InspectionContext) -> ValidationO
             confidence=0.3,
         )
     if ctx.origin_status == "DOMESTIC":
-        # Rule 6(1)(aa) is strictly imported-products-only — confirmed
-        # against the current gazette record while researching the 2026
-        # amendment below; there is no broader "all products" extension of
-        # 6(1)(aa) itself. (An earlier version of this handler speculated
-        # that e-commerce policy broadened this for online listings of
-        # domestic products too, citing a general 2020 DPIIT direction —
-        # that citation could not be verified precisely and has been
-        # removed. The real, citable 2026 e-commerce country-of-origin
-        # requirement is Rule 6(10A), which is also imported-products-only
-        # — see `_coo_searchable_filter_gate` below — so there was no
-        # domestic-product gap to cover in the first place.)
+        # Rule 6(1)(aa) is strictly imported-products-only per the
+        # authoritative supplied specification; there is no broader "all
+        # products" extension of 6(1)(aa) itself. (An earlier version of
+        # this handler speculated that e-commerce policy broadened this for
+        # online listings of domestic products too — first citing a general
+        # 2020 DPIIT direction, later a purported "Rule 6(10A)" 2026
+        # amendment — neither citation could be traced to the authoritative
+        # supplied source, and both have been removed; see
+        # `LMPC-R6-10A-COO-FILTER`'s removal note in seed_rules.py, dated
+        # 2026-08-28.)
         return ValidationOutcome(
             status=ComplianceStatus.NOT_APPLICABLE,
             reason="This product was identified as domestically manufactured (no importer declared); country-of-origin declaration is not applicable under Rule 6(1)(aa).",
@@ -273,92 +305,58 @@ def _country_of_origin_gate(config: dict, ctx: InspectionContext) -> ValidationO
     return presence_check({"require_any_group": [[F.COUNTRY_OF_ORIGIN]]}, ctx)
 
 
-def _coo_searchable_filter_gate(config: dict, ctx: InspectionContext) -> ValidationOutcome:
-    """Rule 6(10A) — inserted by the Legal Metrology (Packaged Commodities)
-    Amendment Rules, 2026 (G.S.R. 128(E), 13 Feb 2026, in force 1 Jul 2026;
-    further amended by the Second Amendment Rules, 2026 — G.S.R. 312(E),
-    27 Apr 2026, that provision in force 1 Jul 2027). Distinct from Rule
-    6(1)(aa): 6(1)(aa) requires country-of-origin to be *mentioned on the
-    package*; 6(10A) additionally requires every e-commerce entity selling
-    an imported product to provide a *searchable and sortable filter* for
-    country of origin on the listing/platform — imported products only,
-    never extended to domestic products by this rule.
-
-    LM-SCAN can verify a *necessary but not sufficient* precondition for
-    6(10A) from a fetched listing page: whether country of origin is
-    declared/extractable on the listing at all. It cannot verify the
-    platform-level searchable/sortable filter widget itself — that is an
-    interactive UI feature, not page content a generic scraper can assess
-    — so this never reports a confident PASS on the full 6(10A) obligation,
-    only on its declaration prerequisite, worded accordingly (Section 46:
-    never assert more than the evidence supports).
-    """
-    if ctx.origin_status != "IMPORTED":
-        return ValidationOutcome(
-            status=ComplianceStatus.NOT_APPLICABLE,
-            reason="Rule 6(10A) applies only to e-commerce listings of imported products; this product was not identified as imported.",
-            confidence=0.6,
-        )
-    if not ctx.web_pages:
-        return ValidationOutcome(
-            status=ComplianceStatus.NOT_APPLICABLE,
-            reason="Rule 6(10A) applies to e-commerce listings specifically; this is a manual/photo-only inspection with no online listing.",
-            confidence=0.85,
-        )
-    if ctx.has_value(F.COUNTRY_OF_ORIGIN):
-        return ValidationOutcome(
-            status=ComplianceStatus.NEEDS_MANUAL_REVIEW,
-            reason=(
-                "Country of origin is declared on this imported product's listing, satisfying "
-                "Rule 6(10A)'s declaration prerequisite — but LM-SCAN cannot verify from page "
-                "content whether the platform also provides the searchable and sortable "
-                "country-of-origin filter Rule 6(10A) requires; an officer should confirm the "
-                "filter itself is present on the platform."
-            ),
-            confidence=0.5,
-            checked_fields=[F.COUNTRY_OF_ORIGIN],
-            evidence=_evidence_for(ctx, F.COUNTRY_OF_ORIGIN),
-        )
-    return _absence_outcome(
-        ctx,
-        [F.COUNTRY_OF_ORIGIN],
-        "This product was identified as imported, but no country-of-origin declaration was found on the listing — Rule 6(10A) requires imported products to be identifiable by country of origin (via a searchable/sortable filter) on e-commerce listings.",
-    )
+    # NOTE: a `_coo_searchable_filter_gate` handler previously lived here,
+    # backing a purported "Rule 6(10A)" e-commerce country-of-origin filter
+    # requirement. It was removed on 2026-08-28 along with the
+    # `LMPC-R6-10A-COO-FILTER` seed rule that referenced it — see that seed
+    # rule's removal note in `app/rules/seed_rules.py` for the full
+    # correction. Do not re-add a handler for that rule_key unless a
+    # corresponding requirement is confirmed against the authoritative
+    # supplied specification.
 
 
 def _consumer_care_check(config: dict, ctx: InspectionContext) -> ValidationOutcome:
-    name_or_addr = ctx.has_value(F.CONSUMER_CARE_NAME) or ctx.has_value(F.CONSUMER_CARE_ADDRESS)
-    phone_or_email = ctx.has_value(F.CONSUMER_CARE_PHONE) or ctx.has_value(F.CONSUMER_CARE_EMAIL)
+    """Rule 6(2), corrected per docs/Legal_Metrology_Rules_Corrected.md
+    Section 5: name, address, telephone number, AND e-mail address are each
+    independently REQUIRED by the current substituted text -- none of the
+    four is a substitute for another. (An earlier version of this handler
+    accepted name-OR-address plus phone-OR-email as sufficient for a PASS,
+    reasoning that an older PDF revision's "if available" wording made
+    phone/email optional; the corrected specification is explicit that this
+    reasoning must not be retained -- the "if available" text is historical,
+    superseded by the 2015 substitution.)
 
-    if name_or_addr and phone_or_email:
-        fields = [F.CONSUMER_CARE_NAME, F.CONSUMER_CARE_ADDRESS, F.CONSUMER_CARE_PHONE, F.CONSUMER_CARE_EMAIL]
+    Uncertainty about *whether evidence was actually captured* is still
+    handled the same evidence-quality-aware way as every other rule (never
+    "if missing then illegal"): a missing field under strong, otherwise-
+    complete evidence is POTENTIAL_NON_COMPLIANCE; under weak/uncertain
+    evidence it is NEEDS_MANUAL_REVIEW; with no usable evidence at all it is
+    UNABLE_TO_VERIFY. That's `_absence_outcome`'s existing job -- this
+    handler's only change from the old version is which fields it demands.
+    """
+    fields = [F.CONSUMER_CARE_NAME, F.CONSUMER_CARE_ADDRESS, F.CONSUMER_CARE_PHONE, F.CONSUMER_CARE_EMAIL]
+    missing = [f for f in fields if not ctx.has_value(f)]
+
+    if not missing:
         evidence = [e for f in fields for e in _evidence_for(ctx, f)]
         return ValidationOutcome(
             status=ComplianceStatus.PASS,
-            reason="Consumer-care name/address and a phone or email contact were both found.",
+            reason="Consumer-care name, address, telephone number, and e-mail address were all found.",
             confidence=0.85,
             checked_fields=fields,
             evidence=evidence,
         )
 
-    if name_or_addr and not phone_or_email:
-        return ValidationOutcome(
-            status=ComplianceStatus.NEEDS_MANUAL_REVIEW,
-            reason=(
-                "Consumer-care name/address was found but no phone or email contact was "
-                "detected. Source-text history for this sub-rule is ambiguous about whether "
-                "phone/email is unconditionally mandatory (see docs/legal-rules.md), so this "
-                "is routed for officer review rather than auto-flagged."
-            ),
-            confidence=0.55,
-            checked_fields=[F.CONSUMER_CARE_NAME, F.CONSUMER_CARE_ADDRESS],
+    if len(missing) == len(fields):
+        base_reason = "No consumer-care name, address, phone, or email was found anywhere in the extracted declarations."
+    else:
+        base_reason = (
+            f"Consumer-care field(s) {missing} were not found; Rule 6(2)'s current substituted "
+            "text requires name, address, telephone number, AND e-mail address -- none of "
+            "these four is an accepted substitute for another."
         )
 
-    return _absence_outcome(
-        ctx,
-        [F.CONSUMER_CARE_NAME, F.CONSUMER_CARE_ADDRESS, F.CONSUMER_CARE_PHONE, F.CONSUMER_CARE_EMAIL],
-        "No consumer-care name, address, phone, or email was found anywhere in the extracted declarations.",
-    )
+    return _absence_outcome(ctx, missing, base_reason)
 
 
 def _ecommerce_display_aggregate(config: dict, ctx: InspectionContext) -> ValidationOutcome:
@@ -410,6 +408,39 @@ def _ecommerce_display_aggregate(config: dict, ctx: InspectionContext) -> Valida
     )
 
 
+def _fast_food_restaurant_gate(config: dict, ctx: InspectionContext) -> ValidationOutcome:
+    """Rule 26(b): the Rules do not apply to a package containing fast food
+    items packed by a restaurant or hotel and the like. LM-SCAN cannot
+    confirm from a marketplace listing that a given seller is actually a
+    restaurant/hotel packing its own fast food (as opposed to, say, a
+    packaged-snacks brand using the words "fast food" in its title), so
+    this never asserts a confident exemption -- a keyword hint only decides
+    whether the question is even plausibly in play. No hint at all ->
+    NOT_APPLICABLE (this exemption plainly doesn't relate to this product);
+    a hint present -> NEEDS_MANUAL_REVIEW so an officer can confirm the
+    actual restaurant/hotel-packed fact before treating the package as
+    exempt.
+    """
+    haystack = _declared_text_haystack(ctx, config.get("hint_fields", [F.PRODUCT_NAME]))
+    hint_patterns = config.get("hint_patterns", [])
+    if not any(re.search(p, haystack, re.IGNORECASE) for p in hint_patterns):
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="No evidence was found that this product is a fast food item packed by a restaurant or hotel.",
+            confidence=0.6,
+        )
+    return ValidationOutcome(
+        status=ComplianceStatus.NEEDS_MANUAL_REVIEW,
+        reason=(
+            "Listing text suggests this may be a fast food item packed by a restaurant, hotel, "
+            "or similar establishment (Rule 26(b) exemption) -- but LM-SCAN cannot confirm the "
+            "actual packer's identity/status from a marketplace listing alone, so this is "
+            "routed for officer confirmation rather than treated as a confident exemption."
+        ),
+        confidence=0.5,
+    )
+
+
 def _when_packed_phrase(config: dict, ctx: InspectionContext) -> ValidationOutcome:
     decl = ctx.best(F.NET_QUANTITY)
     if decl is None or not decl.value:
@@ -434,6 +465,313 @@ def _when_packed_phrase(config: dict, ctx: InspectionContext) -> ValidationOutco
         checked_fields=[F.NET_QUANTITY],
         evidence=_evidence_for(ctx, F.NET_QUANTITY),
     )
+
+
+_PIN_CODE_PATTERN = re.compile(r"\b\d{6}\b")
+_LOCALITY_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z\s]+,\s*[A-Za-z][A-Za-z\s]+\b")
+
+
+def _name_address_form_check(config: dict, ctx: InspectionContext) -> ValidationOutcome:
+    """Rule 10(1)/10(2), corrected per docs/Legal_Metrology_Rules_Corrected.md
+    Section 9: do NOT implement `PIN code OR "word, word"` as a universal
+    "complete address" test -- that was this rule's previous behavior
+    (a single PATTERN_CHECK where either signal alone was sufficient for a
+    PASS) and the corrected specification names it directly as the wrong
+    approach to fix (Section 18 Correction 2).
+
+    Layered heuristic used here instead:
+      1. No address declared at all -> the existing evidence-quality-aware
+         absence path (`_absence_outcome`): UNABLE_TO_VERIFY with no
+         evidence, NEEDS_MANUAL_REVIEW under weak evidence, or
+         POTENTIAL_NON_COMPLIANCE under otherwise-strong evidence (a
+         completely missing address is a genuine gap, not merely a "short"
+         one).
+      2. An address is declared and shows BOTH a 6-digit PIN code AND a
+         separate locality/city-state token -> PASS. Requiring both,
+         instead of either, raises the bar rather than lowering it -- this
+         is deliberately conservative, not a stronger legal claim than the
+         evidence supports.
+      3. An address is declared but doesn't clear that bar -> always
+         NEEDS_MANUAL_REVIEW, never escalated to POTENTIAL_NON_COMPLIANCE
+         by this heuristic alone. Rule 28 allows a manufacturer/packer to
+         register a shorter address the authority is satisfied is
+         sufficient; a short/ambiguous address extracted from a listing
+         cannot be distinguished from a legitimately registered shorter
+         address without officer input, so this never asserts a confident
+         violation from format alone.
+    """
+    address_fields = config.get("any_of_fields", [F.MANUFACTURER_ADDRESS, F.PACKER_ADDRESS, F.IMPORTER_ADDRESS])
+    candidates = [d for f in address_fields for d in ctx.values_for(f) if (d.value or "").strip()]
+
+    if not candidates:
+        return _absence_outcome(
+            ctx,
+            address_fields,
+            f"No value was found for field(s) {address_fields}.",
+        )
+
+    best = max(candidates, key=lambda d: d.confidence)
+    field_name = best.field_name
+    best_value = best.value or ""
+    has_pin = bool(_PIN_CODE_PATTERN.search(best_value))
+    has_locality = bool(_LOCALITY_PATTERN.search(best_value))
+
+    if has_pin and has_locality:
+        return ValidationOutcome(
+            status=ComplianceStatus.PASS,
+            reason=(
+                f"Field '{field_name}' value {best.value!r} contains both a PIN code and a "
+                "locality/city-state token, sufficient under this heuristic for a consumer to "
+                "identify and locate the manufacturer, packer, or importer."
+            ),
+            confidence=round(best.confidence, 2),
+            checked_fields=[field_name],
+            evidence=_evidence_for(ctx, field_name),
+        )
+
+    return ValidationOutcome(
+        status=ComplianceStatus.NEEDS_MANUAL_REVIEW,
+        reason=(
+            f"Field '{field_name}' value {best.value!r} was found but does not clearly show "
+            "both a PIN code and a locality/city-state token, so this heuristic cannot confirm "
+            "the address is complete enough to identify and locate the manufacturer, packer, "
+            "or importer. This may still be a valid Rule 28 registered shorter address; an "
+            "officer should confirm rather than this being auto-flagged as a violation."
+        ),
+        confidence=0.5,
+        checked_fields=[field_name],
+        evidence=_evidence_for(ctx, field_name),
+    )
+
+
+_CHAPTER2_GENERAL_THRESHOLD_G = 25_000  # 25 kg
+_CHAPTER2_GENERAL_THRESHOLD_ML = 25_000  # 25 litre
+_CHAPTER2_BAGGED_COMMODITY_CEILING_G = 50_000  # 50 kg
+
+
+def evaluate_chapter2_applicability(ctx: InspectionContext) -> bool | None:
+    """Rule 3 — Chapter II applicability gate, corrected per
+    docs/Legal_Metrology_Rules_Corrected.md Section 3 / Section 18
+    Correction 4. Returns True if Chapter II clearly does NOT apply (this
+    package is exempt), False if it clearly does apply, or None if this
+    cannot be confidently determined from the evidence LM-SCAN's extraction
+    pipeline actually provides -- mirroring `evaluate_small_package_exemption`'s
+    tri-state contract and its "never guess an exemption" default.
+
+    Deliberately NOT implemented: a commodity-type classifier that could
+    positively identify "this is/isn't a cement, fertilizer, or
+    agricultural farm produce bag." No such classifier exists in this
+    codebase and building one was explicitly out of scope for this pass
+    ("do not build a speculative classifier" / "use only evidence the
+    current extraction pipeline can actually provide"). Its absence is
+    handled conservatively, not by guessing:
+
+    - Net quantity > 50 kg (or > 25 litre for liquids, which have no
+      bagged-commodity carve-out in the specification) is exempt under
+      Rule 3 regardless of commodity type -- even the most generous
+      carve-out in the specification (cement/fertilizer/agricultural farm
+      produce bags) only extends coverage up to 50 kg, so anything above
+      that is unambiguously exempt.
+    - Net quantity strictly between 25 kg and 50 kg is where the
+      specification's cement/fertilizer/farm-produce carve-out actually
+      matters (Chapter II *continues to apply* to those three commodities
+      in that band) -- and since LM-SCAN cannot determine commodity type,
+      it never asserts a confident exemption in that band. It returns None
+      (not True), so the caller falls through to continued applicability
+      rather than a false exemption.
+    - Net quantity <= 25 kg / 25 litre: Chapter II applies normally (False).
+    - Net quantity absent/unparseable: None (unable to determine).
+
+    The industrial/institutional-consumer exemption is checked via
+    `ctx.institutional_or_industrial_context`, itself only ever set True by
+    an explicit self-description in listing/product text (never inferred
+    from package size or any other proxy) -- see
+    app/nlp/classification.py::is_institutional_or_industrial_context.
+    """
+    if ctx.institutional_or_industrial_context:
+        return True
+
+    decl = ctx.best(F.NET_QUANTITY)
+    if decl is None or not decl.value:
+        return None
+    parsed = parse_net_quantity(decl.value)
+    if parsed is None:
+        return None
+
+    if parsed.basis == "volume_ml":
+        if parsed.normalized_value > _CHAPTER2_GENERAL_THRESHOLD_ML:
+            return True
+        return False
+
+    if parsed.basis == "weight_g":
+        grams = parsed.normalized_value
+        if grams > _CHAPTER2_BAGGED_COMMODITY_CEILING_G:
+            return True
+        if grams > _CHAPTER2_GENERAL_THRESHOLD_G:
+            # Ambiguous band: could be an ordinary >25kg item (exempt) or a
+            # cement/fertilizer/agricultural-farm-produce bag <=50kg (still
+            # covered). No reliable commodity-type signal exists -- prefer
+            # continued applicability over a false exemption.
+            return None
+        return False
+
+    return None
+
+
+def _chapter2_applicability_gate(config: dict, ctx: InspectionContext) -> ValidationOutcome:
+    """Not invoked in normal operation -- LMPC-R3-APPLICABILITY is seeded
+    with `gating_only: True`, so the compliance engine consults
+    `evaluate_chapter2_applicability` directly (see app/compliance/engine.py)
+    and never calls this handler as a standalone check, the same way
+    `_small_package_exemption_gate` is never called for Rule 26(a). Kept for
+    documentation symmetry and in case `gating_only` is ever toggled off."""
+    exempt = evaluate_chapter2_applicability(ctx)
+    if exempt is None:
+        return ValidationOutcome(
+            status=ComplianceStatus.UNABLE_TO_VERIFY,
+            reason="Net quantity and consumer-type evidence were insufficient to determine Rule 3 Chapter II applicability.",
+            confidence=0.3,
+            checked_fields=[F.NET_QUANTITY],
+        )
+    if exempt:
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="Rule 3 exempts this package from Chapter II of the Legal Metrology (Packaged Commodities) Rules, 2011.",
+            confidence=0.7,
+            checked_fields=[F.NET_QUANTITY],
+        )
+    return ValidationOutcome(
+        status=ComplianceStatus.PASS,
+        reason="This package does not qualify for any Rule 3 Chapter II exemption; Chapter II applies.",
+        confidence=0.7,
+        checked_fields=[F.NET_QUANTITY],
+    )
+
+
+def _advertisement_net_quantity_check(config: dict, ctx: InspectionContext) -> ValidationOutcome:
+    """Rule 31(1)-(2): any advertisement mentioning the retail sale price of
+    a pre-packaged commodity must also declare the net quantity (or number)
+    of the commodity, and the font size of the net-quantity numerals in the
+    advertisement must equal that of the RSP. Per
+    docs/Legal_Metrology_Rules_Corrected.md Section 12 / Section 18
+    Correction 6, this rule matters directly for an online/advertising
+    scanner and must not be filed away as out-of-scope alongside Rules
+    32-34.
+
+    Only meaningful for an online listing (an "advertisement" in the sense
+    this rule addresses) -- a manual/photo-only inspection has no
+    advertisement for this rule to apply to. The net-quantity-presence
+    sub-requirement is a deterministic, evidence-quality-aware presence
+    check; the font-size-equality sub-requirement can never be verified
+    from scraped page text/images (no reliable DOM/CSS measurement is
+    available), so the best outcome this rule ever reports, once RSP and
+    net quantity are both present, is NEEDS_MANUAL_REVIEW -- never a full
+    PASS, per the specification's explicit "do not claim automatic
+    verification of font-size equality" instruction.
+    """
+    if not ctx.web_pages:
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="Rule 31 concerns advertisements; this is a manual/photo-only inspection with no online listing/advertisement to check.",
+            confidence=0.85,
+        )
+
+    if not ctx.has_value(F.MRP):
+        return ValidationOutcome(
+            status=ComplianceStatus.NOT_APPLICABLE,
+            reason="No retail sale price is displayed on this listing; Rule 31 applies only to advertisements that mention the retail sale price.",
+            confidence=0.6,
+        )
+
+    if not ctx.has_value(F.NET_QUANTITY):
+        return _absence_outcome(
+            ctx,
+            [F.NET_QUANTITY],
+            "This listing displays a retail sale price but no net quantity or count "
+            "declaration was found alongside it; Rule 31 requires an advertisement "
+            "mentioning the retail sale price to also declare the net quantity or number "
+            "of the commodity.",
+        )
+
+    return ValidationOutcome(
+        status=ComplianceStatus.NEEDS_MANUAL_REVIEW,
+        reason=(
+            "This listing displays both a retail sale price and a net quantity/count "
+            "declaration, satisfying Rule 31's core disclosure requirement -- but LM-SCAN "
+            "cannot verify from page content whether the font size of the net-quantity "
+            "numerals matches that of the retail sale price, as Rule 31 also requires; an "
+            "officer should confirm this from the actual advertisement."
+        ),
+        confidence=0.55,
+        checked_fields=[F.MRP, F.NET_QUANTITY],
+        evidence=_evidence_for(ctx, F.MRP) + _evidence_for(ctx, F.NET_QUANTITY),
+    )
+
+
+def _currency_declarations_equal(a, b) -> bool:
+    a_norm = a.normalized_value or normalize_currency(a.value)
+    b_norm = b.normalized_value or normalize_currency(b.value)
+    if a_norm is None or b_norm is None:
+        return False
+    return a_norm == b_norm
+
+
+def _unit_sale_price_check(config: dict, ctx: InspectionContext) -> ValidationOutcome:
+    """Rule 6(11), corrected per docs/Legal_Metrology_Rules_Corrected.md
+    Section 7 / Section 18 Correction 3: unit sale price is not required
+    where the retail sale price equals the unit sale price -- an express,
+    narrow statutory exception. The corrected specification explicitly
+    warns against implementing this as a blanket "single item = exempt"
+    rule; that shortcut is not implemented here or anywhere else in this
+    handler. This now uses the already-extracted `unit_sale_price`
+    declaration (app/nlp/patterns.py already produces it; nothing previously
+    consumed it) for that one deterministic comparison, and otherwise keeps
+    the prior manual-review-first posture -- LM-SCAN still cannot reliably
+    determine general multi-unit-pack applicability from a listing alone,
+    so nothing here ever asserts a confident violation from a text hint by
+    itself; a hint only decides whether to apply the same evidence-quality-
+    aware absence logic used everywhere else in this file (never a fixed
+    auto-fail, never a fixed auto-pass).
+    """
+    mrp_decl = ctx.best(F.MRP)
+    unit_price_decl = ctx.best(F.UNIT_SALE_PRICE)
+
+    if mrp_decl and unit_price_decl and _currency_declarations_equal(mrp_decl, unit_price_decl):
+        return ValidationOutcome(
+            status=ComplianceStatus.PASS,
+            reason=(
+                "The declared unit sale price equals the retail sale price; Rule 6(11) "
+                "expressly does not require a separate unit sale price disclosure in this case."
+            ),
+            confidence=round(min(mrp_decl.confidence, unit_price_decl.confidence), 2),
+            checked_fields=[F.MRP, F.UNIT_SALE_PRICE],
+            evidence=_evidence_for(ctx, F.MRP) + _evidence_for(ctx, F.UNIT_SALE_PRICE),
+        )
+
+    if not ctx.has_sufficient_evidence:
+        return ValidationOutcome(
+            status=ComplianceStatus.UNABLE_TO_VERIFY,
+            reason="No page content or images were retrieved for this inspection.",
+            confidence=0.3,
+        )
+
+    hint_patterns = config.get("multipack_hint_patterns")
+    if hint_patterns and not ctx.has_value(F.UNIT_SALE_PRICE):
+        haystack = _declared_text_haystack(ctx, [F.PRODUCT_NAME, F.NET_QUANTITY])
+        if any(re.search(p, haystack, re.IGNORECASE) for p in hint_patterns):
+            return _absence_outcome(
+                ctx,
+                [F.UNIT_SALE_PRICE],
+                config.get(
+                    "reason_multipack_hint",
+                    "Listing text suggests this may be a multi-unit pack (e.g. 'Pack of N') "
+                    "and no distinct unit sale price was found, and the retail sale price "
+                    "does not appear to already equal a declared unit price.",
+                ),
+            )
+
+    reason = config.get("reason_default", "This requirement needs human judgment and is routed for officer review.")
+    return ValidationOutcome(status=ComplianceStatus.NEEDS_MANUAL_REVIEW, reason=reason, confidence=0.5)
 
 
 def evaluate_small_package_exemption(ctx: InspectionContext) -> bool | None:
@@ -481,11 +819,15 @@ def _small_package_exemption_gate(config: dict, ctx: InspectionContext) -> Valid
 
 _CROSS_FIELD_HANDLERS = {
     "country_of_origin_gate": _country_of_origin_gate,
-    "coo_searchable_filter_gate": _coo_searchable_filter_gate,
     "consumer_care_check": _consumer_care_check,
     "ecommerce_display_aggregate": _ecommerce_display_aggregate,
+    "fast_food_restaurant_gate": _fast_food_restaurant_gate,
     "when_packed_phrase": _when_packed_phrase,
     "small_package_exemption_gate": _small_package_exemption_gate,
+    "name_address_form_check": _name_address_form_check,
+    "chapter2_applicability_gate": _chapter2_applicability_gate,
+    "advertisement_net_quantity_check": _advertisement_net_quantity_check,
+    "unit_sale_price_check": _unit_sale_price_check,
 }
 
 

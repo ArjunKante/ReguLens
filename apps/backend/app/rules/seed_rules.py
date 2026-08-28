@@ -50,6 +50,54 @@ class SeedRule(TypedDict, total=False):
 
 SEED_RULES: list[SeedRule] = [
     {
+        "rule_key": "LMPC-R3-APPLICABILITY",
+        "rule_reference": "Rule 3",
+        "title": "Chapter II applicability gate",
+        "description": (
+            "Chapter II (the mandatory-declaration rules) does not apply to packages "
+            "above 25 kg/25 litre (with a separate 50 kg carve-out for cement, fertilizer, "
+            "and agricultural farm produce sold in bags), or to packages meant for "
+            "industrial or institutional consumers."
+        ),
+        "requirement": (
+            "Chapter II does not apply to: (1) packages containing a quantity of more "
+            "than 25 kg or 25 litre; (2) cement, fertilizer, and agricultural farm "
+            "produce sold in bags above 50 kg; (3) packaged commodities meant for "
+            "industrial consumers or institutional consumers."
+        ),
+        "applicability": "Gating logic only -- used to mark all other in-scope rules NOT_APPLICABLE when Chapter II does not apply.",
+        "exceptions": (
+            "Must NOT be implemented as a flat 'quantity <= 25kg/25 litre' test -- the "
+            "PDF separately provides an above-50-kg condition for cement, fertilizer, "
+            "and agricultural farm produce sold in bags (see notes)."
+        ),
+        "validation_type": "CROSS_FIELD_CHECK",
+        "severity": "INFO",
+        "validator_config": {"handler": "chapter2_applicability_gate"},
+        "gating_only": True,
+        "source_document": SOURCE_DOC,
+        "source_locator": "Rule 3",
+        "effective_from": "2018-01-01",
+        "effective_until": None,
+        "notes": (
+            "Current text substituted by G.S.R. 629(E) dated 23 June 2017, in force "
+            "1.1.2018. Added 2026-08-28 per docs/Legal_Metrology_Rules_Corrected.md "
+            "Section 3 / Section 18 Correction 4 -- this gate did not previously exist "
+            "in the codebase at all, so every rule below ran unconditionally regardless "
+            "of package size or consumer type. LM-SCAN has no commodity-type classifier "
+            "(cement/fertilizer/agricultural farm produce) or industrial/institutional-"
+            "consumer classifier beyond an explicit self-description in listing text "
+            "(see app/nlp/classification.py::is_institutional_or_industrial_context), so "
+            "this gate only asserts a confident exemption where the evidence supports it "
+            "unambiguously (net quantity > 50kg, or > 25 litre, or an explicit "
+            "institutional/industrial self-description) -- it never guesses a false "
+            "exemption in the ambiguous 25-50kg band where the cement/fertilizer/"
+            "farm-produce carve-out would matter; see "
+            "evaluate_chapter2_applicability()'s docstring in app/rules/validators.py "
+            "for the full band-by-band reasoning."
+        ),
+    },
+    {
         "rule_key": "LMPC-R6-1A-MFR-NAME",
         "rule_reference": "Rule 6(1)(a)",
         "title": "Manufacturer / packer / importer name & address",
@@ -108,52 +156,35 @@ SEED_RULES: list[SeedRule] = [
         "notes": (
             "Substituted by G.S.R. 629(E) dated 23 June 2017, in force 1.1.2018. Rule "
             "6(1)(aa) itself is imported-products-only and package-level (\"mentioned on the "
-            "package\") -- it does not extend to domestic products or to an e-commerce-specific "
-            "display duty. The separate, distinctly-numbered 2026 e-commerce country-of-origin "
-            "requirement is Rule 6(10A) -- see LMPC-R6-10A-COO-FILTER below; it is also "
-            "imported-products-only, so there is no domestic-product gap for this rule to cover."
+            "package\") -- it does not extend to domestic products or to any e-commerce-specific "
+            "display duty. (Correction, 2026-08-28: an earlier revision of this note cross-"
+            "referenced a purported 'Rule 6(10A)' e-commerce country-of-origin filter "
+            "requirement said to derive from a 2026 amendment; that citation could not be "
+            "traced to the authoritative supplied source and has been removed -- see "
+            "LMPC-R6-10A-COO-FILTER's removal note above. No e-commerce-specific extension of "
+            "6(1)(aa) is currently supported by the authoritative specification.)"
         ),
     },
-    {
-        "rule_key": "LMPC-R6-10A-COO-FILTER",
-        "rule_reference": "Rule 6(10A)",
-        "title": "Searchable/sortable country-of-origin filter for imported products (e-commerce)",
-        "description": (
-            "E-commerce entities selling imported products must provide a searchable and "
-            "sortable country-of-origin filter on the product listing/platform."
-        ),
-        "requirement": (
-            "Every e-commerce entity offering for sale any imported product shall ensure "
-            "that the product listing contains a searchable and sortable filter specifying "
-            "the country of origin."
-        ),
-        "applicability": "E-commerce listings of imported products only (not domestic products, not physical-package-only inspections).",
-        "exceptions": "Not applicable to domestically manufactured products, or to inspections with no online listing.",
-        "validation_type": "CROSS_FIELD_CHECK",
-        "severity": "MAJOR",
-        "validator_config": {"handler": "coo_searchable_filter_gate"},
-        "source_document": (
-            "Legal Metrology (Packaged Commodities) Amendment Rules, 2026 (G.S.R. 128(E), "
-            "13 Feb 2026); Legal Metrology (Packaged Commodities) Second Amendment Rules, "
-            "2026 (G.S.R. 312(E), 27 Apr 2026)"
-        ),
-        "source_locator": "Rule 6(10A)",
-        "effective_from": "2026-07-01",
-        "effective_until": None,
-        "notes": (
-            "Inserted by G.S.R. 128(E) dated 13 Feb 2026, in force 1 Jul 2026 (already in "
-            "force). Further amended by the Second Amendment Rules, 2026 -- G.S.R. 312(E) "
-            "dated 27 Apr 2026 -- with that provision in force 1 Jul 2027 (not yet in force; "
-            "re-verify this rule's text against the gazette once that date passes). Distinct "
-            "from Rule 6(1)(aa): 6(1)(aa) requires the country of origin to be mentioned on "
-            "the package itself; 6(10A) additionally requires the *e-commerce platform* to "
-            "provide a searchable/sortable filter by country of origin. LM-SCAN can only "
-            "verify the declaration prerequisite (is country of origin extractable from the "
-            "listing at all) from a scraped page -- it cannot verify the platform's "
-            "interactive filter widget -- so this rule never asserts a confident PASS on the "
-            "full 6(10A) obligation; see coo_searchable_filter_gate's docstring."
-        ),
-    },
+    # NOTE: a rule previously seeded here as "LMPC-R6-10A-COO-FILTER" (a
+    # purported "Rule 6(10A)" searchable/sortable country-of-origin filter
+    # requirement, citing a "2026 amendment") was REMOVED on 2026-08-28.
+    #
+    # Correction note (dated 2026-08-28): that rule was never traceable to
+    # the authoritative supplied consolidated source (the Legal Metrology
+    # (Packaged Commodities) Rules, 2011 PDF, as corrected/re-confirmed in
+    # docs/Legal_Metrology_Rules_Corrected.md). It was sourced from secondary
+    # web summaries ("SCC Online, Mondaq, TeamLease RegTech, Digital Policy
+    # Alert") that this codebase's own prior comments admitted were never
+    # independently verified against a primary gazette text. The corrected,
+    # authoritative specification contains no Rule 6(10A) and no such
+    # amendment. It has been removed here (dropped from SEED_RULES) rather
+    # than reworded, and `app/rules/loader.py` deactivates the corresponding
+    # `Rule.active` row for any rule_key that disappears from this list —
+    # see `load_rules()`'s deactivation pass. The row and its full version
+    # history remain in the `rules`/`rule_versions` tables (Rule.active =
+    # False) for audit purposes; it is not hard-deleted. Do not re-add a
+    # country-of-origin e-commerce filter requirement unless it is supported
+    # by the authoritative supplied source document.
     {
         "rule_key": "LMPC-R6-1B-GENERIC-NAME",
         "rule_reference": "Rule 6(1)(b)",
@@ -335,9 +366,17 @@ SEED_RULES: list[SeedRule] = [
         "notes": (
             "Substituted by G.S.R. 385(E) dated 14 May 2015 (effective 1.1.2016, "
             "compliance dispensed with until 30.6.2016). An earlier printed version read "
-            "'...if available...' for phone/email; because the Source PDF shows both "
-            "versions inline, LM-SCAN treats a missing phone/email as NEEDS_MANUAL_REVIEW "
-            "and only flags complete absence of any contact route as POTENTIAL_NON_COMPLIANCE."
+            "'...if available...' for phone/email; that wording is historical and does not "
+            "apply to the current substituted text. Correction (2026-08-28, per "
+            "docs/Legal_Metrology_Rules_Corrected.md Section 18 Correction 1): name, "
+            "address, telephone number, AND e-mail address are each independently required "
+            "-- none is an accepted substitute for another. A prior version of this rule's "
+            "validator treated name-OR-address plus phone-OR-email as sufficient for a PASS; "
+            "that was incorrect and has been fixed. Missing field(s) still route through the "
+            "same evidence-quality-aware logic as every other rule (POTENTIAL_NON_COMPLIANCE "
+            "under strong evidence, NEEDS_MANUAL_REVIEW under weak/uncertain evidence, "
+            "UNABLE_TO_VERIFY with no usable evidence) -- OCR uncertainty alone is still "
+            "never turned into an automatic violation."
         ),
     },
     {
@@ -388,17 +427,19 @@ SEED_RULES: list[SeedRule] = [
             "Not required for alcoholic beverages under State Excise law, or where MRP "
             "equals the unit sale price (single-unit packs)."
         ),
-        "validation_type": "MANUAL_REVIEW_CHECK",
+        "validation_type": "CROSS_FIELD_CHECK",
         "severity": "MINOR",
         "validator_config": {
+            "handler": "unit_sale_price_check",
             "multipack_hint_patterns": [r"pack of\s*\d+", r"\bx\s*\d+\b", r"\d+\s*x\s*\d+"],
             "reason_default": (
                 "LM-SCAN cannot reliably determine multi-unit-pack status from a listing "
                 "alone; officer should confirm whether unit sale price disclosure applies."
             ),
             "reason_multipack_hint": (
-                "Listing text suggests a multi-unit pack (e.g. 'Pack of N') but no "
-                "distinct unit sale price was detected; officer verification requested."
+                "Listing text suggests a multi-unit pack (e.g. 'Pack of N') and no distinct "
+                "unit sale price was detected, and the retail sale price does not appear to "
+                "already equal a declared unit price; officer verification requested."
             ),
         },
         "source_document": SOURCE_DOC,
@@ -408,7 +449,19 @@ SEED_RULES: list[SeedRule] = [
         "notes": (
             "Current text inserted by G.S.R. 226(E) dated 28 March 2022 (effective "
             "1.10.2022), superseding an earlier version inserted by G.S.R. 779(E) dated "
-            "2 November 2021 (effective 1.4.2022); both reproduced in the Source PDF."
+            "2 November 2021 (effective 1.4.2022); both reproduced in the Source PDF. "
+            "Correction (2026-08-28, per docs/Legal_Metrology_Rules_Corrected.md Section 7 "
+            "/ Section 18 Correction 3): the previous validator never consulted the "
+            "already-extracted `unit_sale_price` field at all, always returning "
+            "NEEDS_MANUAL_REVIEW unconditionally. Moved from MANUAL_REVIEW_CHECK to "
+            "CROSS_FIELD_CHECK (architecturally necessary for the cross-field RSP-vs-unit-"
+            "price comparison the specification recommends) so that a declared unit sale "
+            "price equal to the retail sale price now deterministically PASSes (the "
+            "specification's express exception), and a detected multi-pack hint with a "
+            "missing unit price now goes through the same evidence-quality-aware logic as "
+            "every other absence finding, instead of a fixed status regardless of evidence "
+            "quality. No blanket 'single item = exempt' rule is implemented, per the "
+            "specification's explicit warning against that shortcut."
         ),
     },
     {
@@ -449,19 +502,34 @@ SEED_RULES: list[SeedRule] = [
             "and locate the manufacturer, packer, or importer."
         ),
         "applicability": "Same scope as Rule 6(1)(a); adds a completeness test.",
-        "exceptions": None,
-        "validation_type": "PATTERN_CHECK",
+        "exceptions": (
+            "Rule 28 allows registration of a shorter address where the authority is "
+            "satisfied it is sufficient; an address that doesn't clearly show both a PIN "
+            "and a locality is routed to manual review rather than auto-failed, since it "
+            "may be a legitimately registered shorter address."
+        ),
+        "validation_type": "CROSS_FIELD_CHECK",
         "severity": "MAJOR",
         "validator_config": {
+            "handler": "name_address_form_check",
             "any_of_fields": [F.MANUFACTURER_ADDRESS, F.PACKER_ADDRESS, F.IMPORTER_ADDRESS],
-            "patterns": [r"\b\d{6}\b", r"\b[A-Za-z\s]+,\s*[A-Za-z\s]+\b"],
         },
         "excluded_categories": [Cat.FOOD.value],
         "source_document": SOURCE_DOC,
         "source_locator": "Rule 10(1), 10(2), Explanation 1",
         "effective_from": "2018-01-01",
         "effective_until": None,
-        "notes": "Explanation 1 substituted by G.S.R. 629(E) dated 23 June 2017, in force 1.1.2018.",
+        "notes": (
+            "Explanation 1 substituted by G.S.R. 629(E) dated 23 June 2017, in force "
+            "1.1.2018. Correction (2026-08-28, per docs/Legal_Metrology_Rules_Corrected.md "
+            "Section 18 Correction 2): the previous validator PASSed on a PIN code ALONE OR "
+            "a 'word, word' locality pattern ALONE -- the corrected specification names "
+            "'PIN OR city+state = complete address' directly as an incorrect universal test. "
+            "Replaced with a layered heuristic (both a PIN AND a locality token required for "
+            "PASS; anything short of that routes to NEEDS_MANUAL_REVIEW, never an automatic "
+            "violation, since Rule 28 permits a registered shorter address this heuristic "
+            "cannot distinguish from an incomplete one)."
+        ),
     },
     {
         "rule_key": "LMPC-R11-QTY-BASIS",
@@ -483,6 +551,43 @@ SEED_RULES: list[SeedRule] = [
         "effective_from": "2011-04-01",
         "effective_until": None,
         "notes": None,
+    },
+    {
+        "rule_key": "LMPC-R31-ADVERTISEMENT-NET-QTY",
+        "rule_reference": "Rule 31(1)-(2)",
+        "title": "Advertisement mentioning RSP must also declare net quantity",
+        "description": (
+            "Any advertisement mentioning the retail sale price of a pre-packaged commodity "
+            "must also declare the net quantity or number of the commodity, in a font size "
+            "matching the retail sale price."
+        ),
+        "requirement": (
+            "Any advertisement which mentions the retail sale price of a pre-packaged "
+            "commodity shall also contain a declaration of the net quantity, or the "
+            "number of the commodity contained in the package, and the font size of the "
+            "net quantity in the advertisement shall be the same as that of the retail "
+            "sale price."
+        ),
+        "applicability": "Online listings that display a retail sale price (the listing itself functions as the advertisement).",
+        "exceptions": "Not applicable where no retail sale price is displayed, or to manual/photo-only inspections with no online listing.",
+        "validation_type": "CROSS_FIELD_CHECK",
+        "severity": "MINOR",
+        "validator_config": {"handler": "advertisement_net_quantity_check"},
+        "source_document": SOURCE_DOC,
+        "source_locator": "Rule 31(1), 31(2)",
+        "effective_from": "2011-04-01",
+        "effective_until": None,
+        "notes": (
+            "Added 2026-08-28 per docs/Legal_Metrology_Rules_Corrected.md Section 12 / "
+            "Section 18 Correction 6, which explicitly warns against grouping Rule 31 with "
+            "the out-of-scope Rules 32-34 -- Rule 31 directly regulates advertisements that "
+            "mention retail sale price and is squarely relevant to an online listing "
+            "scanner. Net-quantity presence is a deterministic, evidence-quality-aware "
+            "check; font-size equality between the RSP and net-quantity numerals can never "
+            "be verified from scraped page content (no DOM/CSS measurement available), so "
+            "this rule never reports a full PASS once RSP is displayed -- the best outcome "
+            "is NEEDS_MANUAL_REVIEW for the font-size sub-requirement."
+        ),
     },
     {
         "rule_key": "LMPC-R26-EXEMPT-SMALL",
@@ -508,6 +613,127 @@ SEED_RULES: list[SeedRule] = [
         "effective_from": "2015-07-01",
         "effective_until": None,
         "notes": "Not surfaced as a standalone finding; applied internally by the rule engine.",
+    },
+    {
+        "rule_key": "LMPC-R26-EXEMPT-FAST-FOOD",
+        "rule_reference": "Rule 26(b)",
+        "title": "Restaurant/hotel-packed fast food exemption",
+        "description": (
+            "The Rules do not apply to a package containing fast food items packed by a "
+            "restaurant or hotel and the like."
+        ),
+        "requirement": (
+            "Nothing in these rules shall apply to a package containing fast food items "
+            "packed by a restaurant or hotel and the like."
+        ),
+        "applicability": "Standalone advisory finding -- never gates other rules NOT_APPLICABLE automatically.",
+        "exceptions": None,
+        "validation_type": "CROSS_FIELD_CHECK",
+        "severity": "MINOR",
+        "validator_config": {
+            "handler": "fast_food_restaurant_gate",
+            "hint_fields": [F.PRODUCT_NAME],
+            "hint_patterns": [
+                r"\bfast food\b", r"\brestaurant\b", r"\bhotel\b", r"\bready[\s-]?to[\s-]?eat\b",
+                r"\bcloud kitchen\b", r"\bQSR\b", r"\btakeaway\b", r"\btake[\s-]?out\b",
+            ],
+        },
+        "source_document": SOURCE_DOC,
+        "source_locator": "Rule 26(b)",
+        "effective_from": "2011-04-01",
+        "effective_until": None,
+        "notes": (
+            "Added 2026-08-28 per docs/Legal_Metrology_Rules_Corrected.md Section 11 "
+            "('IMPLEMENTED/conditional' in the Section 17 summary). LM-SCAN cannot confirm "
+            "a seller's actual restaurant/hotel-packer status from a marketplace listing, "
+            "so this never asserts a confident exemption -- a narrow keyword hint only "
+            "decides whether the question is even plausibly in play (NOT_APPLICABLE when "
+            "absent, NEEDS_MANUAL_REVIEW when present); it never marks sibling rules "
+            "NOT_APPLICABLE on its own."
+        ),
+    },
+    {
+        "rule_key": "LMPC-R26-EXEMPT-DRUG-FORMULATIONS",
+        "rule_reference": "Rule 26(c)",
+        "title": "Certain drug formulations exemption",
+        "description": (
+            "Certain scheduled and non-scheduled formulations covered by the Drugs (Price "
+            "Control) Order, 2013 are exempt; medical devices declared as drugs are not."
+        ),
+        "requirement": (
+            "Nothing in these rules shall apply to such scheduled formulations and "
+            "non-scheduled formulations covered under the Drugs (Price Control) Order, "
+            "2013. No exemption shall be applicable to medical devices declared as drugs."
+        ),
+        "applicability": "Standalone advisory finding -- never a confident exemption from OCR keywords alone.",
+        "exceptions": "No exemption for medical devices declared as drugs.",
+        "validation_type": "MANUAL_REVIEW_CHECK",
+        "severity": "MINOR",
+        "validator_config": {
+            "applicability_hint_fields": [F.PRODUCT_NAME],
+            "applicability_hint_patterns": [
+                r"\btablet(s)?\b", r"\bcapsule(s)?\b", r"\bsyrup\b", r"\bformulation\b",
+                r"\bpharmaceutical\b", r"\bdrug(s)?\b", r"\bmedicine\b", r"\bmedicament\b",
+                r"\bschedule[d]?\s+formulation\b", r"\bI\.?P\.?\b", r"\bU\.?S\.?P\.?\b",
+            ],
+            "applicability_absent_reason": (
+                "No evidence was found that this product is a scheduled or non-scheduled "
+                "drug formulation under the Drugs (Price Control) Order, 2013."
+            ),
+            "reason_default": (
+                "Listing text suggests this may be a drug formulation potentially covered by "
+                "the Rule 26(c) exemption -- but LM-SCAN must not classify a product as a "
+                "qualifying drug formulation (or rule out the medical-device carve-out) from "
+                "OCR/listing keywords alone; an officer should confirm."
+            ),
+        },
+        "source_document": SOURCE_DOC,
+        "source_locator": "Rule 26(c)",
+        "effective_from": "2011-04-01",
+        "effective_until": None,
+        "notes": (
+            "Added 2026-08-28 per docs/Legal_Metrology_Rules_Corrected.md Section 11, which "
+            "explicitly warns: 'Do not classify a product as a qualifying drug formulation "
+            "using OCR keywords alone.' A keyword hint only decides whether to surface a "
+            "NEEDS_MANUAL_REVIEW flag at all (NOT_APPLICABLE when no hint is present); it "
+            "never asserts a confident exemption on its own, and the medical-device carve-out "
+            "is left entirely to officer judgment."
+        ),
+    },
+    {
+        "rule_key": "LMPC-R26-EXEMPT-THREAD-COIL",
+        "rule_reference": "Rule 26(e)",
+        "title": "Thread sold in coil to handloom weavers exemption",
+        "description": "The Rules do not apply to thread sold in coil to handloom weavers.",
+        "requirement": "Nothing in these rules shall apply to thread sold in coil to handloom weavers.",
+        "applicability": "Standalone advisory finding -- never a confident exemption from OCR keywords alone.",
+        "exceptions": None,
+        "validation_type": "MANUAL_REVIEW_CHECK",
+        "severity": "MINOR",
+        "validator_config": {
+            "applicability_hint_fields": [F.PRODUCT_NAME],
+            "applicability_hint_patterns": [r"\bthread\b", r"\bcoil\b", r"\bhandloom\b", r"\bweaver(s)?\b", r"\byarn\b"],
+            "applicability_absent_reason": (
+                "No evidence was found that this product is thread sold in coil to handloom weavers."
+            ),
+            "reason_default": (
+                "Listing text suggests this may be thread sold in coil to handloom weavers "
+                "(Rule 26(e) exemption) -- but the specific transaction/use condition (sale "
+                "to a handloom weaver specifically) is unlikely to be established reliably "
+                "from a marketplace listing or OCR alone; an officer should confirm."
+            ),
+        },
+        "source_document": SOURCE_DOC,
+        "source_locator": "Rule 26(e)",
+        "effective_from": "2011-04-01",
+        "effective_until": None,
+        "notes": (
+            "Added 2026-08-28 per docs/Legal_Metrology_Rules_Corrected.md Section 11, which "
+            "notes the specific transaction/use condition (sale to a handloom weaver) is "
+            "unlikely to be established reliably from OCR alone. A keyword hint only decides "
+            "whether to surface a NEEDS_MANUAL_REVIEW flag (NOT_APPLICABLE when no hint is "
+            "present); it never asserts a confident exemption on its own."
+        ),
     },
 ]
 

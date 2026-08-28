@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.models.enums import ProductCategoryCode
-from app.nlp.classification import classify_category
+from app.nlp.classification import classify_category, is_institutional_or_industrial_context
 
 
 def test_classifies_snack_as_food():
@@ -31,3 +31,15 @@ def test_no_keyword_match_yields_unknown_with_low_confidence():
     result = classify_category("Xyzzy Widget Model 42", "Xyzzy", "A generic mechanical part")
     assert result.category == ProductCategoryCode.UNKNOWN
     assert result.confidence < 0.5
+
+
+def test_institutional_industrial_context_detected_from_explicit_listing_text():
+    """Used only by the Rule 3 Chapter II applicability gate -- must fire
+    only on an explicit self-description, never inferred from size/price."""
+    assert is_institutional_or_industrial_context("Bulk Cleaning Solvent 30L - For Industrial Use Only")
+    assert is_institutional_or_industrial_context("Catering Pack Rice 25kg", "Not for retail sale")
+
+
+def test_institutional_industrial_context_absent_for_ordinary_listing():
+    assert not is_institutional_or_industrial_context("Tasty Munch Potato Chips 100g", "Crunchy salted chips")
+    assert not is_institutional_or_industrial_context(None, None)

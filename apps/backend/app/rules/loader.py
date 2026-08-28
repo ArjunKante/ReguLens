@@ -72,8 +72,23 @@ def _content_hash(seed: Mapping[str, Any]) -> str:
 
 
 def load_rules(db: Session) -> dict[str, str]:
-    """Returns a summary dict: rule_key -> 'created' | 'new_version' | 'unchanged'."""
+    """Returns a summary dict: rule_key -> 'created' | 'new_version' | 'unchanged'
+    | 'reactivated' | 'deactivated'.
+
+    A rule_key present in the DB but no longer present in SEED_RULES is
+    deactivated (`Rule.active = False`), never deleted — its `RuleVersion`
+    history is left intact so past inspections stay reproducible (Section
+    12) and the removal itself stays auditable. A deactivated rule is
+    excluded from the compliance engine's active-rule query
+    (`app/compliance/engine.py::_active_rule_versions`, which filters on
+    `Rule.active.is_(True)`), so it stops producing new ComplianceCheck rows
+    without erasing what it already produced historically. If a rule_key
+    that was previously deactivated this way reappears in SEED_RULES, it is
+    reactivated (`Rule.active = True`) rather than treated as brand new,
+    preserving its original identity/version history.
+    """
     summary: dict[str, str] = {}
+    seed_keys = {seed["rule_key"] for seed in SEED_RULES}
 
     for seed in SEED_RULES:
         rule = db.query(Rule).filter(Rule.rule_key == seed["rule_key"]).one_or_none()
@@ -88,6 +103,10 @@ def load_rules(db: Session) -> dict[str, str]:
             summary[seed["rule_key"]] = "created"
             continue
 
+        was_inactive = not rule.active
+        if was_inactive:
+            rule.active = True
+
         current_version = (
             db.query(RuleVersion)
             .filter(RuleVersion.rule_id == rule.id, RuleVersion.is_current.is_(True))
@@ -98,7 +117,7 @@ def load_rules(db: Session) -> dict[str, str]:
         )
 
         if current_version is not None and current_hash == new_hash:
-            summary[seed["rule_key"]] = "unchanged"
+            summary[seed["rule_key"]] = "reactivated" if was_inactive else "unchanged"
             continue
 
         next_version_number = (current_version.version_number + 1) if current_version else 1
@@ -106,7 +125,16 @@ def load_rules(db: Session) -> dict[str, str]:
             current_version.is_current = False
         version = _build_version(rule.id, next_version_number, seed)
         db.add(version)
-        summary[seed["rule_key"]] = "new_version"
+        summary[seed["rule_key"]] = "reactivated" if was_inactive else "new_version"
+
+    # Deactivate (never delete) any rule whose rule_key has disappeared from
+    # SEED_RULES — e.g. a rule later found not to be supported by the
+    # authoritative source. History stays intact; the engine simply stops
+    # selecting it (see docstring above).
+    stale_rules = db.query(Rule).filter(Rule.active.is_(True), ~Rule.rule_key.in_(seed_keys)).all()
+    for rule in stale_rules:
+        rule.active = False
+        summary[rule.rule_key] = "deactivated"
 
     db.commit()
     return summary
