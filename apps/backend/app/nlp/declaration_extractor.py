@@ -90,27 +90,77 @@ def extract_declarations_from_webpage(
     return declarations
 
 
+_LINE_CLUSTER_HEIGHT_FRACTION = 0.6
+
+
+def _group_into_lines(ocr_results: list[OCRResult]) -> list[list[OCRResult]]:
+    """Reconstructs reading order from unordered OCR word/line boxes.
+
+    A flat sort by (y, x) — the original approach — breaks on real-world
+    output: Devanagari conjuncts and matras routinely shift one word's
+    bounding-box top by 20-25px relative to its neighbors *on the same
+    visual line* (verified against real Tesseract output on a Hindi label:
+    "निर्माता:" at y=353 next to "भारत"/"फूड्स"/"प्रा." at y=371, all one
+    line). A pure (y, x) sort treats that y gap as "a different line" and
+    reorders purely by y first, scrambling the line's actual left-to-right
+    text — e.g. "निर्माता: भारत फूड्स प्रा. लि., ..." became "निर्माता:
+    लि., ..." with everything in between sorted elsewhere, so the
+    manufacturer-name pattern captured only "लि." ("Ltd."). Clustering by
+    y-*proximity* first (generous threshold, since the same conjunct/matra
+    variance that causes the problem also means "same line" can't be a tight
+    band) and only sorting by x *within* a cluster reconstructs the correct
+    reading order instead.
+    """
+    by_y = sorted(ocr_results, key=lambda r: (r.bounding_box or {}).get("y", 0))
+    lines: list[list[OCRResult]] = []
+    for block in by_y:
+        bbox = block.bounding_box or {}
+        y = bbox.get("y", 0)
+        height = bbox.get("height", 0) or 0
+        for line in lines:
+            ref_bbox = line[0].bounding_box or {}
+            ref_y = ref_bbox.get("y", 0)
+            ref_height = ref_bbox.get("height", 0) or 0
+            if abs(y - ref_y) <= max(height, ref_height, 1) * _LINE_CLUSTER_HEIGHT_FRACTION:
+                line.append(block)
+                break
+        else:
+            lines.append([block])
+    lines.sort(key=lambda line: min((b.bounding_box or {}).get("y", 0) for b in line))
+    for line in lines:
+        line.sort(key=lambda b: (b.bounding_box or {}).get("x", 0))
+    return lines
+
+
 def extract_declarations_from_ocr(
     db: Session, inspection_id: uuid.UUID, product_image: ProductImage, ocr_results: list[OCRResult]
 ) -> list[Declaration]:
     if not ocr_results:
         return []
 
-    # Order top-to-bottom, left-to-right so multi-word phrases split across
-    # OCR blocks (e.g. "MRP" / "Rs." / "60.00") still read coherently.
-    ordered = sorted(
-        ocr_results,
-        key=lambda r: ((r.bounding_box or {}).get("y", 0), (r.bounding_box or {}).get("x", 0)),
-    )
+    lines = _group_into_lines(ocr_results)
+    ordered = [block for line in lines for block in line]
+
+    # Lines are joined with a real "\n" (not a bare space) so "loose" value
+    # patterns (a name, a date — anything not tightly bounded to digits)
+    # can't run on past the end of their own line into the next
+    # declaration's text. Found live testing Hindi labels (Section 46/48
+    # follow-on): consumer_care_name and mfg_date both bled into the
+    # following line's content this way — a pre-existing bug, not Hindi-
+    # specific, just more likely to surface on Devanagari's looser
+    # keyword-to-value patterns.
     blob_parts: list[str] = []
     offsets: list[tuple[int, int, OCRResult]] = []
     cursor = 0
-    for block in ordered:
-        start = cursor
-        blob_parts.append(block.text)
-        cursor += len(block.text)
-        offsets.append((start, cursor, block))
-        blob_parts.append(" ")
+    for line in lines:
+        for block in line:
+            start = cursor
+            blob_parts.append(block.text)
+            cursor += len(block.text)
+            offsets.append((start, cursor, block))
+            blob_parts.append(" ")
+            cursor += 1
+        blob_parts.append("\n")
         cursor += 1
     blob = "".join(blob_parts)
 

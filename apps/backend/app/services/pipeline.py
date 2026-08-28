@@ -233,6 +233,16 @@ def run_inspection_pipeline(db: Session, inspection_id) -> None:  # noqa: ANN001
                 # satisfy.
                 distinct_fields = {c.field_name for c in scraped_product.field_candidates}
                 if len(distinct_fields) <= 1:
+                    # Persisted (not just logged as a PipelineEvent) so the
+                    # compliance engine's evidence-quality scoring
+                    # (app/compliance/context.py) can see it too — this used
+                    # to only affect the frontend's "upload screenshots"
+                    # fallback prompt, so a hollow "success" still counted as
+                    # good evidence and produced confident
+                    # POTENTIAL_NON_COMPLIANCE findings against a page that
+                    # never actually yielded any real product data.
+                    web_page.hollow = True
+                    db.commit()
                     _record(
                         db, inspection, PipelineStage.FETCH, PipelineStageStatus.FAILED,
                         "The page was fetched successfully, but no product name/details could be "

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.compliance import ComplianceCheck
 from app.models.declaration import Declaration
-from app.models.enums import InspectionStatus, PipelineStage
+from app.models.enums import ComplianceStatus, InspectionStatus, PipelineStage
 from app.models.inspection import Inspection, PipelineEvent
 from app.models.scraping import WebPage
 from app.models.user import User
@@ -196,6 +196,16 @@ def test_pipeline_flags_hollow_success_when_fetch_succeeds_with_no_product_data(
         for e in fetch_events
     )
 
+    # The hollow flag must be persisted on the WebPage row (not just logged
+    # as a PipelineEvent), and the compliance engine must actually treat it
+    # as "no real evidence" rather than a genuinely successful, complete
+    # scrape — with zero images either, that means UNABLE_TO_VERIFY across
+    # the board, not a confident POTENTIAL_NON_COMPLIANCE against data that
+    # was never really retrieved.
+    web_page = db.query(WebPage).filter(WebPage.inspection_id == inspection.id).one()
+    assert web_page.hollow is True
+    assert inspection.overall_status == ComplianceStatus.UNABLE_TO_VERIFY.value
+
 
 def test_pipeline_flags_hollow_success_even_when_a_generic_og_title_is_present(
     db: Session, inspector_user: User, loaded_rules, monkeypatch
@@ -241,6 +251,10 @@ def test_pipeline_flags_hollow_success_even_when_a_generic_og_title_is_present(
         for e in fetch_events
     )
 
+    web_page = db.query(WebPage).filter(WebPage.inspection_id == inspection.id).one()
+    assert web_page.hollow is True
+    assert inspection.overall_status == ComplianceStatus.UNABLE_TO_VERIFY.value
+
 
 def test_pipeline_does_not_flag_a_real_scrape_that_only_found_a_name_and_one_other_field(
     db: Session, inspector_user: User, loaded_rules, monkeypatch
@@ -280,6 +294,9 @@ def test_pipeline_does_not_flag_a_real_scrape_that_only_found_a_name_and_one_oth
         .all()
     )
     assert not any("no product name/details could be extracted" in (e.message or "") for e in fetch_events)
+
+    web_page = db.query(WebPage).filter(WebPage.inspection_id == inspection.id).one()
+    assert web_page.hollow is False
 
 
 def test_pipeline_records_total_duration_as_a_done_stage_event(

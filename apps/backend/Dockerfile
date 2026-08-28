@@ -14,14 +14,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # System dependencies: Tesseract OCR engine + libs Playwright's Chromium needs.
+# tesseract-ocr-hin: Hindi/Devanagari trained data — Rule 9(4) permits
+# mandatory declarations in Hindi or English, so OCR must read both, not
+# just English (see docs/ocr.md). fonts-lohit-deva: a small Devanagari font
+# so the Hindi OCR round-trip test can render real Devanagari text without
+# a large font dependency.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
+    tesseract-ocr-hin \
     libtesseract-dev \
     curl \
     wget \
     gnupg \
     ca-certificates \
     fonts-liberation \
+    fonts-lohit-deva \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
     libpangocairo-1.0-0 libpango-1.0-0 libcairo2 libx11-6 \
