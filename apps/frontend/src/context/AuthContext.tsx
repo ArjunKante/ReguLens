@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { setToken } from "../api/client";
 import { login as loginRequest } from "../api/endpoints";
 import type { RoleName } from "../types";
@@ -63,6 +63,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
   }
+
+  // api/client.ts dispatches this the moment any authenticated request comes
+  // back 401 (expired/invalid token) — without this, ProtectedRoute never
+  // learns the session died, since it only checks this cached profile blob,
+  // not the token itself, leaving every page stuck on a raw API error.
+  useEffect(() => {
+    window.addEventListener("lmscan:unauthorized", logout);
+    return () => window.removeEventListener("lmscan:unauthorized", logout);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, loading, error, login, logout }}>

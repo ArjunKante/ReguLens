@@ -88,6 +88,13 @@ th, td { border-bottom: 1px solid var(--color-border); padding: 8px 10px; text-a
 th { color: var(--color-text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
 tr:hover td { background: #fafbfc; }
 
+/* Fixed-format identifiers (LMSCAN-YYYYMMDD-XXXXX) must never line-wrap
+   inside a narrow table column: a wrapped link creates a dead click zone
+   in the vertical gap between its two lines — a real click landing there
+   hits the table cell's background instead of the link underneath it
+   (found while testing the Inspection History / Batch triage tables). */
+.nowrap { white-space: nowrap; }
+
 .badge {
   display: inline-block;
   padding: 2px 9px;

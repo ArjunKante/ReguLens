@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
+import { BatchDetailPage } from "./pages/BatchDetailPage";
+import { BatchHistoryPage } from "./pages/BatchHistoryPage";
+import { BatchNewPage } from "./pages/BatchNewPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InspectionDetailPage } from "./pages/InspectionDetailPage";
 import { InspectionHistoryPage } from "./pages/InspectionHistoryPage";
@@ -26,6 +29,16 @@ export default function App() {
           }
         />
         <Route path="/inspections/:id" element={<ProtectedRoute><InspectionDetailPage /></ProtectedRoute>} />
+        <Route path="/batches" element={<ProtectedRoute><BatchHistoryPage /></ProtectedRoute>} />
+        <Route
+          path="/batches/new"
+          element={
+            <ProtectedRoute allow={["ADMIN", "INSPECTOR"]}>
+              <BatchNewPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/batches/:id" element={<ProtectedRoute><BatchDetailPage /></ProtectedRoute>} />
         <Route path="/rules" element={<ProtectedRoute><RuleManagementPage /></ProtectedRoute>} />
         <Route
           path="/users"

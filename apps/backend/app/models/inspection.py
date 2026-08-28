@@ -12,6 +12,7 @@ from app.models.enums import ComplianceStatus, EvidenceSourceType, InspectionSta
 from app.models.mixins import TimestampMixin, UUIDPKMixin
 
 if TYPE_CHECKING:
+    from app.models.batch import InspectionBatch
     from app.models.compliance import ComplianceCheck
     from app.models.declaration import Declaration
     from app.models.product import Product
@@ -37,6 +38,14 @@ class Inspection(Base, UUIDPKMixin, TimestampMixin):
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     platform: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Nullable: most inspections are standalone. Set when this inspection was
+    # created as one item of a bulk/batch scan (Section 30/48 follow-on) —
+    # a batch is nothing more than this tag, so every other column/relationship
+    # on Inspection behaves identically whether or not it's set.
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("inspection_batches.id"), nullable=True, index=True
+    )
+
     status: Mapped[InspectionStatus] = mapped_column(
         String(32), default=InspectionStatus.CREATED, nullable=False, index=True
     )
@@ -55,6 +64,7 @@ class Inspection(Base, UUIDPKMixin, TimestampMixin):
 
     officer: Mapped["User"] = relationship(foreign_keys=[officer_id])
     product: Mapped["Product | None"] = relationship(back_populates="inspections")
+    batch: Mapped["InspectionBatch | None"] = relationship(back_populates="inspections")
 
     pipeline_events: Mapped[list["PipelineEvent"]] = relationship(
         back_populates="inspection", cascade="all, delete-orphan", order_by="PipelineEvent.created_at"

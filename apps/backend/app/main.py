@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth as auth_routes
+from app.api.routes import batches as batches_routes
 from app.api.routes import dashboard as dashboard_routes
 from app.api.routes import inspections as inspections_routes
 from app.api.routes import reports as reports_routes
@@ -36,6 +37,7 @@ api_prefix = settings.api_v1_prefix
 app.include_router(auth_routes.router, prefix=api_prefix)
 app.include_router(users_routes.router, prefix=api_prefix)
 app.include_router(inspections_routes.router, prefix=api_prefix)
+app.include_router(batches_routes.router, prefix=api_prefix)
 app.include_router(rules_routes.router, prefix=api_prefix)
 app.include_router(dashboard_routes.router, prefix=api_prefix)
 app.include_router(reports_routes.router, prefix=api_prefix)

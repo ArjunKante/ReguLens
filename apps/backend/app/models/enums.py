@@ -107,6 +107,19 @@ class RuleSeverity(str, enum.Enum):
     INFO = "INFO"
 
 
+class BatchStatus(str, enum.Enum):
+    """Lifecycle of an InspectionBatch (bulk/batch scan + triage queue).
+
+    No FAILED state here — individual items already self-report FAILED via
+    InspectionStatus, and the batch as a whole simply finishes once every
+    item has resolved, matching the existing "a stage failure never crashes
+    the whole run" philosophy in services/pipeline.py."""
+
+    CREATED = "CREATED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+
+
 class ComplianceStatus(str, enum.Enum):
     PASS = "PASS"
     POTENTIAL_NON_COMPLIANCE = "POTENTIAL_NON_COMPLIANCE"

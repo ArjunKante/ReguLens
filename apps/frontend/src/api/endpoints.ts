@@ -1,5 +1,7 @@
 import { api } from "./client";
 import type {
+  BatchDetail,
+  BatchSummary,
   DashboardStatistics,
   InspectionDetail,
   InspectionSummary,
@@ -109,4 +111,18 @@ export function createUser(email: string, password: string, fullName: string, ro
 
 export function addManualDeclaration(inspectionId: string, fieldName: string, value: string) {
   return api.post(`/inspections/${inspectionId}/declarations`, { field_name: fieldName, value });
+}
+
+/** Starts a bulk/batch scan: one inspection per URL, run with bounded
+ * concurrency server-side, landing on a triage queue sorted worst-first. */
+export function createBatch(name: string | undefined, urls: string[]) {
+  return api.post<BatchSummary>("/batches", { name: name?.trim() || null, urls });
+}
+
+export function listBatches() {
+  return api.get<BatchSummary[]>("/batches");
+}
+
+export function getBatch(id: string) {
+  return api.get<BatchDetail>(`/batches/${id}`);
 }
