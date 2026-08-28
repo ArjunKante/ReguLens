@@ -44,17 +44,23 @@ RUN mkdir -p /app/storage/uploads /app/storage/reports
 
 EXPOSE 8000
 
-# Migrations + rule loading run on every container start, not just under
-# docker-compose's separate override of this same sequence (kept there too,
-# redundant but harmless) — so the image is correct standalone on any host
-# (Render, a bare `docker run`, ...) without needing a platform-specific
-# Start Command. Both steps are idempotent (alembic no-ops at head; the rule
-# loader logs "unchanged" for rules already loaded), so re-running them on
-# every restart is safe. Shell form, not exec-form CMD [...], so $PORT
+# Migrations + rule loading + orphan reconciliation run on every container
+# start, not just under docker-compose's separate override of this same
+# sequence (kept there too, redundant but harmless) — so the image is
+# correct standalone on any host (Render, a bare `docker run`, ...) without
+# needing a platform-specific Start Command. All three steps are idempotent
+# (alembic no-ops at head; the rule loader logs "unchanged" for rules
+# already loaded; reconciliation finds nothing on a clean database), so
+# re-running them on every restart is safe. The reconciliation step must
+# run here, before uvicorn starts serving new requests — its whole job is
+# to clean up IN_PROGRESS work orphaned by *this exact kind of restart*
+# (see app/services/startup_reconciliation.py), so it has to happen at the
+# start of the new process's life, not be left as something a request
+# handler triggers later. Shell form, not exec-form CMD [...], so $PORT
 # expands: Render assigns a dynamic port via $PORT and expects the process
 # to bind to it; defaults to 8000 when $PORT is unset (plain `docker run`).
 # `exec` on the final command replaces the shell with uvicorn as the
 # container's PID 1 child, so it receives SIGTERM directly on shutdown/
 # redeploy instead of the shell swallowing it and forcing a slower kill-
 # timeout wait (Docker itself flags shell-form CMD without this).
-CMD alembic upgrade head && python -m app.rules.loader && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD alembic upgrade head && python -m app.rules.loader && python -m app.services.startup_reconciliation && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
