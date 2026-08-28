@@ -46,6 +46,7 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              python -m app.rules.loader &&
+             python -m app.services.startup_reconciliation &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   frontend:
