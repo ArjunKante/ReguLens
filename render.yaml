@@ -1,0 +1,52 @@
+# Render Blueprint for the LM-SCAN backend. Deploy with Render's
+# "New Blueprint" flow pointed at this repo — it reads this file and
+# provisions the service below in one step, rather than filling in every
+# field by hand in the dashboard.
+#
+# The database is Neon (see docs/deployment.md), not a Render Postgres
+# instance, so DATABASE_URL is marked `sync: false` below: Render will
+# prompt for it at deploy time instead of storing it in this checked-in
+# file, since it's a real credential that must never live in version
+# control.
+services:
+  - type: web
+    name: lmscan-backend
+    runtime: docker
+    dockerfilePath: ./apps/backend/Dockerfile
+    dockerContext: ./apps/backend
+    region: singapore
+    plan: free
+    healthCheckPath: /docs
+    envVars:
+      # --- Secrets: Render prompts for these at deploy time, never stored here ---
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      # Vercel doesn't hand out its final URL until the frontend's first
+      # deploy, so this can't be filled in until then — set it in the Render
+      # dashboard once you have it (see docs/deployment.md).
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # --- Everything else: safe, non-secret defaults ---
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: STORAGE_ROOT
+        value: /app/storage
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "15"
+      - key: OCR_ENGINE
+        value: tesseract
+      - key: TESSERACT_CMD
+        value: /usr/bin/tesseract
+      - key: PLAYWRIGHT_HEADLESS
+        value: "true"
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: API_V1_PREFIX
+        value: /api/v1
