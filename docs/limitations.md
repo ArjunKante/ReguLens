@@ -6,7 +6,7 @@ because it was overlooked.
 
 ## Legal / rule coverage
 
-- Only 14 rules drawn directly from the Legal Metrology (Packaged
+- Only 19 rules drawn directly from the Legal Metrology (Packaged
   Commodities) Rules, 2011 (plus 6 internal cross-source consistency
   checks) are implemented — the subset that is actually checkable from an
   online listing. Rules 7–8, 12–25, 27–34 and most Schedules are cataloged

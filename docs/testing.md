@@ -56,7 +56,7 @@ apps/backend/tests/
     test_compliance_engine.py     30 tests — PASS/POTENTIAL_NON_COMPLIANCE/
                                     NEEDS_MANUAL_REVIEW/NOT_APPLICABLE/UNABLE_TO_VERIFY
                                     for every seeded rule, cross-source consistency
-                                    PASS+FAIL for all 5 consistency checks
+                                    PASS+FAIL for all 6 consistency checks
     test_pipeline.py               7 tests — full FETCH→REPORT pipeline (mocked
                                     scraper/downloads), graceful fetch-failure handling,
                                     re-analysis non-duplication, hollow-success
