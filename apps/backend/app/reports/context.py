@@ -1,9 +1,23 @@
-"""Builds the data structure the report template renders (Section 17)."""
+"""Builds the data structure the report template renders (Section 17).
+
+IMPORTANT — this module only *formats* data that the compliance engine,
+rule engine, and extraction pipeline have already produced. It never
+computes a status, confidence, evidence item, or rule decision — it only
+derives short display labels/groupings from those existing values (e.g.
+"POTENTIAL_NON_COMPLIANCE" -> the display label "Potential Non-Compliance",
+or a status -> a generic, non-legal officer action prompt). Nothing here
+can change what an inspection found; it only changes how the PDF/HTML
+report presents it.
+"""
 from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
 
+from markupsafe import Markup, escape
+
+from app.compliance.engine import ENGINE_VERSION
+from app.models.compliance import ComplianceCheck
 from app.models.inspection import Inspection
 
 DISCLAIMER = (
@@ -15,41 +29,300 @@ DISCLAIMER = (
     "Legal Metrology officer before any enforcement action is taken."
 )
 
+SHORT_DISCLAIMER = (
+    "Automated Preliminary Compliance Assessment — Subject to Authorized Officer Verification."
+)
+
+STATUS_ORDER = ["PASS", "POTENTIAL_NON_COMPLIANCE", "NEEDS_MANUAL_REVIEW", "NOT_APPLICABLE", "UNABLE_TO_VERIFY"]
+
+STATUS_LABELS = {
+    "PASS": "Pass",
+    "POTENTIAL_NON_COMPLIANCE": "Potential Non-Compliance",
+    "NEEDS_MANUAL_REVIEW": "Needs Manual Review",
+    "NOT_APPLICABLE": "Not Applicable",
+    "UNABLE_TO_VERIFY": "Unable to Verify",
+}
+
+# Purely a UI/report triage label for the officer checklist — never a
+# statutory severity or legal-penalty classification (that distinction is
+# enforced by the compliance engine and rule data itself; see
+# docs/legal-rules.md's "severity is engineering triage weight only").
+_PRIORITY_BY_STATUS = {
+    "POTENTIAL_NON_COMPLIANCE": "High",
+    "NEEDS_MANUAL_REVIEW": "Review",
+    "UNABLE_TO_VERIFY": "Medium",
+}
+
+# Short, generic, status-driven result phrase for the checklist's "LM-SCAN
+# Result" column. Deliberately generic (keyed only on the same status enum
+# the compliance engine already emits) rather than per-rule text, so it
+# stays correct for any current or future rule without hard-coding legal
+# nuance per rule.
+_RESULT_LABEL_BY_STATUS = {
+    "POTENTIAL_NON_COMPLIANCE": "Not detected / potentially non-compliant",
+    "NEEDS_MANUAL_REVIEW": "Requires manual/visual review",
+    "UNABLE_TO_VERIFY": "Insufficient evidence captured",
+}
+
+# Same rule: a generic, operational (not legal) call-to-action derived only
+# from the status the compliance engine already assigned. It never asserts
+# a violation, a rule interpretation, or any fact not already in `reason`.
+_ACTION_BY_STATUS = {
+    "POTENTIAL_NON_COMPLIANCE": "Verify {title} directly on the package/listing before treating this as a violation.",
+    "NEEDS_MANUAL_REVIEW": "Requires manual or visual verification by the officer.",
+    "UNABLE_TO_VERIFY": "Insufficient evidence was captured — re-inspect with clearer photos or listing data.",
+}
+
+_DECLARATION_SOURCE_LABELS = {
+    "WEBPAGE_TEXT": "WEBPAGE",
+    "STRUCTURED_METADATA": "STRUCTURED METADATA",
+    "IMAGE_OCR": "IMAGE/OCR",
+    "USER_INPUT": "MANUAL",
+    "MANUAL_REVIEW": "MANUAL REVIEW",
+}
+
+# Known long source_document values mapped to a short, human-readable name
+# for the main report body. The FULL original value is never discarded —
+# it is always preserved verbatim in the Audit & Legal Traceability
+# Appendix (see `unique_sources` below). This is display-only: the
+# underlying RuleVersion.source_document database value is never modified.
+_KNOWN_SOURCE_LABELS = {
+    "Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf": (
+        "Legal Metrology (Packaged Commodities) Rules, 2011"
+    ),
+}
+_INTERNAL_SOURCE_PREFIX = "LM-SCAN internal engineering rule"
+_INTERNAL_SOURCE_LABEL = "LM-SCAN Internal Cross-Source Check"
+
+_CONSISTENCY_FIELD_LABELS = {
+    "mrp": "MRP",
+    "net_quantity": "Net Quantity",
+    "product_name": "Product Name",
+    "manufacturer_name": "Manufacturer",
+    "importer_name": "Importer",
+    "country_of_origin": "Country of Origin",
+}
+
+_CONSISTENCY_RESULT_LABEL = {
+    "PASS": "Consistent",
+    "POTENTIAL_NON_COMPLIANCE": "Mismatch",
+    "UNABLE_TO_VERIFY": "Inconclusive",
+}
+
+
+def short_source_label(source_document: str | None) -> str:
+    """Concise display name for a rule's source_document — never used to
+    replace or alter the underlying database value, only how it is shown
+    in the main report body. Falls back to a safely truncated version of
+    whatever string is supplied, so a future/unrecognized source document
+    never breaks the layout."""
+    if not source_document:
+        return "—"
+    if source_document in _KNOWN_SOURCE_LABELS:
+        return _KNOWN_SOURCE_LABELS[source_document]
+    if source_document.startswith(_INTERNAL_SOURCE_PREFIX):
+        return _INTERNAL_SOURCE_LABEL
+    if len(source_document) <= 60:
+        return source_document
+    return source_document[:57].rstrip() + "…"
+
+
+def declaration_source_label(source_type: str | None) -> str:
+    return _DECLARATION_SOURCE_LABELS.get(source_type or "", (source_type or "—").replace("_", " "))
+
+
+def status_label(status: str | None) -> str:
+    return STATUS_LABELS.get(status or "", (status or "—").replace("_", " ").title())
+
+
+def humanize_field(field_name: str | None) -> str:
+    if not field_name:
+        return "—"
+    return _CONSISTENCY_FIELD_LABELS.get(field_name, field_name.replace("_", " ").title())
+
+
+def break_identifier(text: str | None, max_chars: int = 14) -> str:
+    """Inserts explicit <br/> breaks into a long hyphenated identifier
+    (a rule_key like "LMPC-R26-EXEMPT-DRUG-FORMULATIONS") every ~max_chars,
+    breaking only at existing hyphens. Needed because reportlab's paragraph
+    line-wrapping (which xhtml2pdf/pisa renders PDF text through) only
+    breaks on whitespace, never on hyphens -- a long unbroken identifier
+    would otherwise overflow its table cell into the next column instead
+    of wrapping, regardless of how wide the column is declared. Callers
+    must render this with the template's `|safe` filter (autoescape is on
+    project-wide) since it deliberately returns literal `<br/>` markup;
+    that's safe here because rule_key values are internal identifiers
+    (uppercase letters/digits/hyphens only), never untrusted user input.
+    """
+    if not text:
+        return "—"
+    segments = text.split("-")
+    lines: list[str] = []
+    current = ""
+    for seg in segments:
+        candidate = f"{current}-{seg}" if current else seg
+        if len(candidate) > max_chars and current:
+            lines.append(current)
+            current = seg
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return "<br/>".join(f"{line}-" if i < len(lines) - 1 else line for i, line in enumerate(lines))
+
+
+def wrap_long_tokens(text: str | None, max_run: int = 28) -> Markup:
+    """HTML-escapes `text` and inserts explicit <br/> breaks inside any
+    single unbroken "word" (whitespace-delimited run with no spaces)
+    longer than max_run characters -- e.g. a raw URL, a long declaration
+    value, or a long identifier embedded in an evidence description.
+
+    Needed for the same reason as `break_identifier`: this xhtml2pdf
+    build's PDF text layout only ever wraps at whitespace and does not
+    honor `word-break`/`overflow-wrap` CSS, so an unbroken long token
+    would otherwise overflow its table cell -- and, confirmed by testing,
+    can overflow straight past the page's printable margin rather than
+    merely looking untidy. Ordinary prose (reasons, comments) that already
+    contains normal spacing wraps correctly on its own and is returned
+    with only its whitespace-delimited words individually escaped/
+    rejoined, unchanged in appearance.
+
+    Escaping happens on each raw segment BEFORE it is chunked, so a break
+    is never inserted in the middle of an HTML entity (e.g. `&amp;`).
+    Every caller of this in the template renders the result with `|safe`,
+    which is safe here because escaping already happened inside this
+    function -- the returned Markup contains only escaped user content
+    plus literal <br/> tags this function controls.
+    """
+    if not text:
+        return Markup("—")
+    words = text.split(" ")
+    out_words = []
+    for word in words:
+        if len(word) <= max_run:
+            out_words.append(str(escape(word)))
+        else:
+            chunks = [word[i : i + max_run] for i in range(0, len(word), max_run)]
+            out_words.append("<br/>".join(str(escape(chunk)) for chunk in chunks))
+    return Markup(" ".join(out_words))
+
+
+def _is_consistency_check(check: ComplianceCheck) -> bool:
+    return check.rule_version.validation_type == "CONSISTENCY_CHECK"
+
+
+def officer_action(check: ComplianceCheck) -> str:
+    template = _ACTION_BY_STATUS.get(check.status)
+    if not template:
+        return "No action required."
+    return template.format(title=check.rule_version.title)
+
+
+def _consistency_sources_available(check: ComplianceCheck) -> str:
+    evidence = list(check.evidence_items)
+    if len(evidence) >= 2:
+        return "Listing + Image"
+    if len(evidence) == 1:
+        return "Listing only" if evidence[0].evidence_type == "WEBPAGE_TEXT" else "Image only"
+    return "Incomplete"
+
 
 @dataclass
 class ReportContext:
     inspection: Inspection
     generated_by_name: str
     generated_at: dt.datetime
+    app_version: str = ENGINE_VERSION
     rule_version_snapshot: list[dict] = field(default_factory=list)
+    unique_sources: list[str] = field(default_factory=list)
     status_groups: dict[str, list] = field(default_factory=dict)
+    status_counts: dict[str, int] = field(default_factory=dict)
+    total_findings: int = 0
+    priority_findings: list[ComplianceCheck] = field(default_factory=list)
+    checklist_items: list[dict] = field(default_factory=list)
+    consistency_rows: list[dict] = field(default_factory=list)
     disclaimer: str = DISCLAIMER
+    short_disclaimer: str = SHORT_DISCLAIMER
 
 
 def build_report_context(inspection: Inspection, generated_by_name: str) -> ReportContext:
     checks = list(inspection.compliance_checks)
-    status_groups: dict[str, list] = {
-        "PASS": [], "POTENTIAL_NON_COMPLIANCE": [], "NEEDS_MANUAL_REVIEW": [],
-        "NOT_APPLICABLE": [], "UNABLE_TO_VERIFY": [],
-    }
-    rule_version_snapshot = []
+
+    status_groups: dict[str, list] = {status: [] for status in STATUS_ORDER}
+    status_counts: dict[str, int] = dict.fromkeys(STATUS_ORDER, 0)
+    consistency_rows: list[dict] = []
+    priority_findings: list[ComplianceCheck] = []
+    checklist_items: list[dict] = []
+
+    rule_version_snapshot: list[dict] = []
+    unique_sources: list[str] = []
+
     for check in checks:
-        status_groups.setdefault(check.status, []).append(check)
+        status_counts[check.status] = status_counts.get(check.status, 0) + 1
+
         rv = check.rule_version
+        source_document = rv.source_document
+        if source_document not in unique_sources:
+            unique_sources.append(source_document)
         rule_version_snapshot.append(
             {
                 "rule_key": rv.rule.rule_key,
                 "version_number": rv.version_number,
                 "rule_reference": rv.rule_reference,
-                "source_document": rv.source_document,
+                "source_document": source_document,
+                "source_index": unique_sources.index(source_document) + 1,
                 "source_locator": rv.source_locator,
             }
         )
+
+        if _is_consistency_check(check):
+            # Cross-source consistency checks get their own compact section
+            # (Section 12) instead of appearing a second time among the
+            # general detailed findings below — nothing is dropped, the
+            # exact same check/result/evidence is still fully represented,
+            # just grouped where it reads far more compactly.
+            consistency_rows.append(
+                {
+                    "check": check,
+                    "field_label": humanize_field((rv.validator_config or {}).get("field")),
+                    "sources_available": _consistency_sources_available(check),
+                    "result_label": _CONSISTENCY_RESULT_LABEL.get(check.status, status_label(check.status)),
+                    "reviewer_action": "Verify" if check.status != "PASS" else "None",
+                }
+            )
+            continue
+
+        status_groups.setdefault(check.status, []).append(check)
+
+        if check.status == "POTENTIAL_NON_COMPLIANCE":
+            priority_findings.append(check)
+
+        if check.status in _PRIORITY_BY_STATUS:
+            checklist_items.append(
+                {
+                    "priority": _PRIORITY_BY_STATUS[check.status],
+                    "item": rv.title,
+                    "result": _RESULT_LABEL_BY_STATUS.get(check.status, status_label(check.status)),
+                    "action": officer_action(check),
+                }
+            )
+
+    priority_findings.sort(key=lambda c: c.confidence, reverse=True)
+    _priority_rank = {"High": 0, "Medium": 1, "Review": 2}
+    checklist_items.sort(key=lambda item: _priority_rank.get(item["priority"], 9))
+
+    total_findings = sum(status_counts.values())
 
     return ReportContext(
         inspection=inspection,
         generated_by_name=generated_by_name,
         generated_at=dt.datetime.now(dt.timezone.utc),
         rule_version_snapshot=rule_version_snapshot,
+        unique_sources=unique_sources,
         status_groups=status_groups,
+        status_counts=status_counts,
+        total_findings=total_findings,
+        priority_findings=priority_findings,
+        checklist_items=checklist_items,
+        consistency_rows=consistency_rows,
     )

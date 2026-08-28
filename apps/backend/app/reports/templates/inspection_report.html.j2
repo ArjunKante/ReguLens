@@ -4,29 +4,157 @@
 <meta charset="utf-8">
 <title>LM-SCAN Inspection Report — {{ ctx.inspection.inspection_number }}</title>
 <style>
-  body { font-family: Helvetica, Arial, sans-serif; font-size: 11px; color: #1a1a1a; margin: 24px; }
-  h1 { font-size: 18px; margin-bottom: 2px; }
-  h2 { font-size: 14px; margin-top: 22px; border-bottom: 1px solid #999; padding-bottom: 3px; }
-  .subtitle { color: #555; margin-top: 0; }
-  .disclaimer { background: #fff3cd; border: 1px solid #d4a72c; padding: 10px; margin: 12px 0 18px 0; font-weight: bold; }
-  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px 0; }
-  th, td { border: 1px solid #ccc; padding: 5px 7px; text-align: left; vertical-align: top; }
-  th { background: #f0f0f0; }
-  .status-PASS { color: #1a7f37; font-weight: bold; }
-  .status-POTENTIAL_NON_COMPLIANCE { color: #b42318; font-weight: bold; }
-  .status-NEEDS_MANUAL_REVIEW { color: #b45309; font-weight: bold; }
-  .status-NOT_APPLICABLE { color: #555; }
-  .status-UNABLE_TO_VERIFY { color: #555; font-style: italic; }
-  .meta-table td:first-child { font-weight: bold; width: 180px; background: #fafafa; }
-  .evidence-item { margin: 3px 0; padding-left: 8px; border-left: 2px solid #ccc; }
-  .footer { margin-top: 30px; font-size: 9px; color: #777; border-top: 1px solid #ccc; padding-top: 8px; }
-  .rule-source { font-size: 9px; color: #555; }
-  .demo-banner { background: #7c3aed; color: #fff; font-weight: bold; padding: 10px; margin-bottom: 12px; text-align: center; }
+  /* ============================================================
+     PAGE GEOMETRY (A4, safe margins)
+     Page: 21.0cm x 29.7cm. Content band: 1.5cm side margins (18cm wide).
+
+     NOTE: the running header/footer are NOT done with xhtml2pdf's
+     documented `@frame` CSS mechanism. This xhtml2pdf 0.2.16 build has a
+     confirmed rendering bug where declaring ANY custom `@frame` (named
+     content region) breaks page flow -- content from different pages
+     gets superimposed/overlapped on the same page instead of paginating
+     cleanly (reproduced with a minimal isolated test, independent of
+     this template's own content). A plain `@page { margin: ... }` (no
+     `@frame`) paginates perfectly, so that's what this template uses;
+     the top/bottom margins below simply reserve blank space for the
+     header/footer, which are stamped onto each rendered page afterward
+     by app/reports/service.py using pypdf + reportlab (a small, reliable
+     post-processing pass — see `_stamp_header_footer` there). This
+     avoids depending on the broken code path entirely rather than
+     working around it with fragile CSS tricks.
+     ============================================================ */
+  @page {
+    size: A4;
+    margin: 2.3cm 1.5cm 2.1cm 1.5cm;
+  }
+
+  /* ============================================================
+     TYPOGRAPHY
+     ============================================================ */
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #1a1a1a; line-height: 1.35; }
+  h1.report-title { font-size: 19pt; font-weight: bold; margin: 0 0 3pt 0; color: #111; }
+  p.subtitle { font-size: 9.5pt; color: #555; margin: 0 0 10pt 0; }
+  h2.section-title {
+    font-size: 12.5pt; font-weight: bold; color: #111;
+    margin: 16pt 0 6pt 0; padding-bottom: 3pt; border-bottom: 1pt solid #999;
+    -pdf-keep-with-next: true;
+  }
+  h3.subsection-title { font-size: 10.5pt; font-weight: bold; color: #222; margin: 10pt 0 4pt 0; }
+  p.section-note { font-size: 8.5pt; color: #666; margin: 0 0 6pt 0; }
+
+  /* ============================================================
+     DISCLAIMER / DEMO BANNER
+     ============================================================ */
+  .disclaimer-box {
+    background: #fff3cd; border: 1pt solid #d4a72c; padding: 9pt 11pt;
+    margin: 8pt 0 14pt 0; font-weight: bold; font-size: 9pt; line-height: 1.4;
+  }
+  .demo-banner {
+    background: #7c3aed; color: #fff; font-weight: bold; padding: 8pt;
+    margin-bottom: 10pt; text-align: center; font-size: 9.5pt;
+  }
+
+  /* ============================================================
+     GENERIC TABLE FRAMEWORK
+     ============================================================ */
+  table.data-table { width: 100%; border-collapse: collapse; margin: 6pt 0 14pt 0; }
+  table.data-table thead th {
+    background: #2c3e50; color: #fff; font-size: 8.5pt; font-weight: bold;
+    text-align: center; padding: 5pt 6pt; border: 0.5pt solid #2c3e50;
+  }
+  table.data-table tbody td {
+    border: 0.5pt solid #ddd; padding: 5pt 6pt; font-size: 8.5pt;
+    vertical-align: top; text-align: left;
+  }
+  table.data-table tbody td.center { text-align: center; vertical-align: middle; }
+  table.data-table tbody td.rule-key-cell { font-size: 7.5pt; word-break: break-all; }
+  table.data-table tbody tr.alt-row td { background: #f8f8f8; }
+  table.data-table tbody td.empty-row { text-align: center; color: #777; font-style: italic; }
+
+  /* ============================================================
+     PAGE 1 — META / SUMMARY
+     ============================================================ */
+  table.meta-table { width: 100%; border-collapse: collapse; margin: 6pt 0 12pt 0; }
+  table.meta-table td { border: 0.5pt solid #ddd; padding: 5pt 8pt; font-size: 9pt; vertical-align: middle; }
+  table.meta-table td.meta-label { font-weight: bold; width: 30%; background: #f7f7f7; color: #333; }
+  td.status-cell { font-weight: bold; text-align: center; color: #fff; }
+  .status-cell-PASS { background: #1a7f37; }
+  .status-cell-POTENTIAL_NON_COMPLIANCE { background: #b42318; }
+  .status-cell-NEEDS_MANUAL_REVIEW { background: #b45309; }
+  .status-cell-NOT_APPLICABLE { background: #6b7280; }
+  .status-cell-UNABLE_TO_VERIFY { background: #555555; }
+
+  table.status-summary { width: 100%; border-collapse: separate; margin: 4pt 0 14pt 0; }
+  table.status-summary td {
+    width: 20%; text-align: center; padding: 8pt 4pt; color: #fff;
+    border: 1.5pt solid #fff;
+  }
+  .status-block-count { font-size: 17pt; font-weight: bold; }
+  .status-block-label { font-size: 7pt; font-weight: bold; margin-top: 2pt; }
+  .status-block-PASS { background: #1a7f37; }
+  .status-block-POTENTIAL_NON_COMPLIANCE { background: #b42318; }
+  .status-block-NEEDS_MANUAL_REVIEW { background: #b45309; }
+  .status-block-NOT_APPLICABLE { background: #6b7280; }
+  .status-block-UNABLE_TO_VERIFY { background: #555555; }
+
+  /* ============================================================
+     PRIORITY FINDINGS
+     ============================================================ */
+  .priority-item {
+    border: 0.5pt solid #e0b4ac; border-left: 3pt solid #b42318;
+    background: #fff8f7; padding: 6pt 9pt; margin: 0 0 7pt 0;
+    -pdf-keep-with-next: false; page-break-inside: avoid;
+  }
+  .priority-item .p-title { font-size: 10pt; font-weight: bold; color: #111; }
+  .priority-item .p-meta { font-size: 8.5pt; color: #444; margin-top: 2pt; }
+  .priority-item .p-action { font-size: 8.5pt; color: #333; margin-top: 2pt; }
+  .none-note { font-size: 9pt; color: #555; font-style: italic; margin: 4pt 0 10pt 0; }
+
+  /* ============================================================
+     FINDING CARDS (label / value layout — avoids narrow multi-column
+     tables for long reason/evidence text; see report redesign notes)
+     ============================================================ */
+  table.finding-card {
+    width: 100%; border-collapse: collapse; margin: 0 0 10pt 0;
+    border: 0.75pt solid #ccc; page-break-inside: avoid;
+  }
+  table.finding-card td.f-label {
+    width: 20%; background: #f2f3f5; font-weight: bold; font-size: 8.5pt;
+    color: #333; padding: 4pt 7pt; border: 0.5pt solid #ddd; vertical-align: top;
+  }
+  table.finding-card td.f-value {
+    width: 80%; font-size: 8.75pt; padding: 4pt 7pt; border: 0.5pt solid #ddd;
+    vertical-align: top; text-align: left;
+  }
+  table.finding-card td.f-value.center-value { text-align: center; vertical-align: middle; }
+  table.finding-card tr.f-head td { background: #eef1f5; }
+  .rule-key-tag { font-size: 7.75pt; color: #666; }
+  .evidence-line { margin: 0 0 2pt 0; padding-left: 6pt; border-left: 1.5pt solid #ccc; font-size: 8.5pt; }
+  .reviewer-line { margin: 0 0 2pt 0; font-size: 8.5pt; }
+  .pending-tag { color: #8a5a00; font-weight: bold; font-size: 8.5pt; }
+
+  .status-text-PASS { color: #1a7f37; font-weight: bold; }
+  .status-text-POTENTIAL_NON_COMPLIANCE { color: #b42318; font-weight: bold; }
+  .status-text-NEEDS_MANUAL_REVIEW { color: #b45309; font-weight: bold; }
+  .status-text-NOT_APPLICABLE { color: #6b7280; font-weight: bold; }
+  .status-text-UNABLE_TO_VERIFY { color: #555555; font-weight: bold; font-style: italic; }
+
+  /* Long, unbroken tokens (URLs, long filenames) — controlled character
+     wrapping so they cannot stretch a table/cell past the page margin. */
+  .long-value { word-break: break-all; }
+
+  .appendix-note { font-size: 8pt; color: #555; margin: 2pt 0 8pt 0; line-height: 1.4; }
 </style>
 </head>
 <body>
+<!-- Running header/footer are stamped onto the rendered PDF pages by
+     app/reports/service.py (see the PAGE GEOMETRY note in <style> above)
+     rather than declared here — this xhtml2pdf build cannot reliably
+     paginate content that uses its own @frame header/footer mechanism. -->
 
-<h1>LM-SCAN Inspection Report{% if ctx.inspection.is_demo %} — DEMO{% endif %}</h1>
+<!-- ================= PAGE 1 — EXECUTIVE INSPECTION SUMMARY ================= -->
+
+<h1 class="report-title">LM-SCAN Inspection Report{% if ctx.inspection.is_demo %} — DEMO{% endif %}</h1>
 <p class="subtitle">AI-Assisted Online Legal Metrology Compliance Inspection System</p>
 
 {% if ctx.inspection.is_demo %}
@@ -36,90 +164,224 @@
 </div>
 {% endif %}
 
-<div class="disclaimer">{{ ctx.disclaimer }}</div>
+<div class="disclaimer-box">{{ ctx.disclaimer }}</div>
 
-<h2>Inspection Details</h2>
 <table class="meta-table">
-  <tr><td>Inspection ID</td><td>{{ ctx.inspection.inspection_number }}</td></tr>
-  <tr><td>Officer</td><td>{{ ctx.inspection.officer.full_name if ctx.inspection.officer else "—" }}</td></tr>
-  <tr><td>Date/Time (generated)</td><td>{{ ctx.generated_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>
-  <tr><td>Platform</td><td>{{ ctx.inspection.platform or "—" }}</td></tr>
-  <tr><td>Product URL</td><td>{{ ctx.inspection.source_url or "Not applicable — manual inspection from uploaded/captured photos, no listing URL" }}</td></tr>
-  <tr><td>Product Title</td><td>{{ ctx.inspection.product.title if ctx.inspection.product else "—" }}</td></tr>
-  <tr><td>Overall Status</td><td class="status-{{ ctx.inspection.overall_status }}">{{ ctx.inspection.overall_status or "—" }}</td></tr>
-  <tr><td>Generated By</td><td>{{ ctx.generated_by_name }}</td></tr>
+  <tr><td class="meta-label">Inspection ID</td><td>{{ ctx.inspection.inspection_number }}</td></tr>
+  <tr><td class="meta-label">Officer</td><td>{{ ctx.inspection.officer.full_name if ctx.inspection.officer else "—" }}</td></tr>
+  <tr><td class="meta-label">Date/Time (generated)</td><td>{{ ctx.generated_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>
+  <tr><td class="meta-label">Platform</td><td>{{ ctx.inspection.platform or "—" }}</td></tr>
+  <tr><td class="meta-label">Product</td><td>{{ wrap_long_tokens(ctx.inspection.product.title) if ctx.inspection.product else "—" }}</td></tr>
+  <tr><td class="meta-label">Product URL</td><td class="long-value">{{ wrap_long_tokens(ctx.inspection.source_url) if ctx.inspection.source_url else "Not applicable — manual inspection from uploaded/captured photos, no listing URL" }}</td></tr>
+  <tr><td class="meta-label">Generated By</td><td>{{ ctx.generated_by_name }}</td></tr>
+  <tr>
+    <td class="meta-label">Overall Status</td>
+    <td class="status-cell status-cell-{{ ctx.inspection.overall_status }}">{{ status_label(ctx.inspection.overall_status) if ctx.inspection.overall_status else "—" }}</td>
+  </tr>
 </table>
 
-<h2>Extracted Declarations</h2>
-<table>
-  <tr><th>Field</th><th>Value</th><th>Source</th><th>Confidence</th></tr>
-  {% for d in ctx.inspection.declarations %}
+<h3 class="subsection-title">Status Summary ({{ ctx.total_findings }} rule{{ "s" if ctx.total_findings != 1 else "" }} evaluated)</h3>
+<table class="status-summary">
   <tr>
-    <td>{{ d.field_name }}</td>
-    <td>{{ d.value }}</td>
-    <td>{{ d.source_type }}</td>
-    <td>{{ "%.0f"|format(d.confidence * 100) }}%</td>
+    <td class="status-block-PASS"><div class="status-block-count">{{ ctx.status_counts.PASS }}</div><div class="status-block-label">PASS</div></td>
+    <td class="status-block-POTENTIAL_NON_COMPLIANCE"><div class="status-block-count">{{ ctx.status_counts.POTENTIAL_NON_COMPLIANCE }}</div><div class="status-block-label">POTENTIAL NON-COMPLIANCE</div></td>
+    <td class="status-block-NEEDS_MANUAL_REVIEW"><div class="status-block-count">{{ ctx.status_counts.NEEDS_MANUAL_REVIEW }}</div><div class="status-block-label">NEEDS MANUAL REVIEW</div></td>
+    <td class="status-block-UNABLE_TO_VERIFY"><div class="status-block-count">{{ ctx.status_counts.UNABLE_TO_VERIFY }}</div><div class="status-block-label">UNABLE TO VERIFY</div></td>
+    <td class="status-block-NOT_APPLICABLE"><div class="status-block-count">{{ ctx.status_counts.NOT_APPLICABLE }}</div><div class="status-block-label">NOT APPLICABLE</div></td>
   </tr>
-  {% else %}
-  <tr><td colspan="4">No declarations were extracted for this inspection.</td></tr>
-  {% endfor %}
 </table>
 
-{% for status, checks in ctx.status_groups.items() %}
-<h2>{{ status.replace("_", " ") }} ({{ checks|length }})</h2>
-{% if checks %}
-<table>
-  <tr><th>Rule</th><th>Reason</th><th>Confidence</th><th>Evidence</th><th>Reviewer Decision</th></tr>
-  {% for check in checks %}
-  <tr>
-    <td>
-      <strong>{{ check.rule_version.title }}</strong><br>
-      <span class="rule-source">{{ check.rule_version.rule.rule_key }} — {{ check.rule_version.rule_reference }}<br>
-      Source: {{ check.rule_version.source_document }} ({{ check.rule_version.source_locator }})<br>
-      Rule version: v{{ check.rule_version.version_number }}</span>
-    </td>
-    <td>{{ check.reason }}</td>
-    <td>{{ "%.0f"|format(check.confidence * 100) }}%</td>
-    <td>
-      {% for ev in check.evidence_items %}
-      <div class="evidence-item">[{{ ev.evidence_type }}] {{ ev.description }}</div>
-      {% else %}
-      —
-      {% endfor %}
-    </td>
-    <td>
-      {% for rd in check.review_decisions %}
-      <div class="evidence-item">{{ rd.decision }} → {{ rd.final_status }} by {{ rd.reviewer.full_name if rd.reviewer else "—" }}{% if rd.comment %}: {{ rd.comment }}{% endif %}</div>
-      {% else %}
-      PENDING
-      {% endfor %}
-    </td>
-  </tr>
-  {% endfor %}
-</table>
+<!-- ================= PRIORITY FINDINGS ================= -->
+
+<h2 class="section-title">Priority Findings</h2>
+<p class="section-note">Summarized here for quick officer triage — full rule detail, evidence, and legal citations appear later in this report under Detailed Findings.</p>
+{% if ctx.priority_findings %}
+{% for check in ctx.priority_findings %}
+<div class="priority-item">
+  <div class="p-title">{{ loop.index }}. {{ check.rule_version.title }}</div>
+  <div class="p-meta">Status: <span class="status-text-POTENTIAL_NON_COMPLIANCE">Potential Non-Compliance</span> &nbsp;·&nbsp; Confidence: {{ "%.0f"|format(check.confidence * 100) }}%</div>
+  <div class="p-action">Officer action: {{ officer_action(check) }}</div>
+</div>
+{% endfor %}
 {% else %}
-<p>None.</p>
+<p class="none-note">No potential non-compliance findings were identified for this inspection. See Detailed Findings below for items still requiring manual review.</p>
+{% endif %}
+
+<!-- ================= OFFICER VERIFICATION CHECKLIST ================= -->
+
+<h2 class="section-title">Officer Verification Checklist</h2>
+<p class="section-note">Generated directly from this inspection's findings — a practical to-do list, not an additional legal conclusion.</p>
+<table class="data-table" repeat="1">
+  <colgroup>
+    <col style="width:10%"><col style="width:20%"><col style="width:32%"><col style="width:38%">
+  </colgroup>
+  <thead>
+    <tr><th>Priority</th><th>Item</th><th>LM-SCAN Result</th><th>Recommended Officer Action</th></tr>
+  </thead>
+  <tbody>
+    {% for item in ctx.checklist_items %}
+    <tr{% if loop.index0 % 2 == 1 %} class="alt-row"{% endif %}>
+      <td class="center">{{ item.priority }}</td>
+      <td>{{ item.item }}</td>
+      <td>{{ item.result }}</td>
+      <td>{{ item.action }}</td>
+    </tr>
+    {% else %}
+    <tr><td class="empty-row" colspan="4">No items require officer verification — all evaluated rules returned Pass or Not Applicable.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- ================= EXTRACTED DECLARATIONS ================= -->
+
+<h2 class="section-title">Extracted Declarations</h2>
+<table class="data-table" repeat="1">
+  <colgroup>
+    <col style="width:20%"><col style="width:44%"><col style="width:22%"><col style="width:14%">
+  </colgroup>
+  <thead>
+    <tr><th>Field</th><th>Value</th><th>Source</th><th>Confidence</th></tr>
+  </thead>
+  <tbody>
+    {% for d in ctx.inspection.declarations %}
+    <tr{% if loop.index0 % 2 == 1 %} class="alt-row"{% endif %}>
+      <td>{{ d.field_name.replace("_", " ")|title }}</td>
+      <td>{{ wrap_long_tokens(d.value) }}</td>
+      <td class="center">{{ declaration_source_label(d.source_type) }}</td>
+      <td class="center">{{ "%.0f"|format(d.confidence * 100) }}%</td>
+    </tr>
+    {% else %}
+    <tr><td class="empty-row" colspan="4">No declarations were extracted for this inspection.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- ================= CROSS-SOURCE CONSISTENCY CHECKS ================= -->
+
+<h2 class="section-title">Cross-Source Consistency Checks</h2>
+<p class="section-note">Compares what the listing page states against what product images show. These are LM-SCAN engineering checks, not Legal Metrology Rules citations in their own right — see Audit Appendix.</p>
+<table class="data-table" repeat="1">
+  <colgroup>
+    <col style="width:16%"><col style="width:22%"><col style="width:16%"><col style="width:12%"><col style="width:34%">
+  </colgroup>
+  <thead>
+    <tr><th>Check</th><th>Sources Available</th><th>Result</th><th>Confidence</th><th>Reviewer Action</th></tr>
+  </thead>
+  <tbody>
+    {% for row in ctx.consistency_rows %}
+    <tr{% if loop.index0 % 2 == 1 %} class="alt-row"{% endif %}>
+      <td>{{ row.field_label }}</td>
+      <td class="center">{{ row.sources_available }}</td>
+      <td class="center">{{ row.result_label }}</td>
+      <td class="center">{{ "%.0f"|format(row.check.confidence * 100) }}%</td>
+      <td class="center">{{ row.reviewer_action }}</td>
+    </tr>
+    {% else %}
+    <tr><td class="empty-row" colspan="5">No cross-source consistency checks applied to this inspection.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if ctx.consistency_rows %}
+<h3 class="subsection-title">Consistency Check Details</h3>
+{% for row in ctx.consistency_rows %}
+<p class="appendix-note"><strong>{{ row.field_label }}:</strong> {{ wrap_long_tokens(row.check.reason) }}</p>
+{% endfor %}
+{% endif %}
+
+<!-- ================= DETAILED FINDINGS ================= -->
+
+<h2 class="section-title">Detailed Findings</h2>
+<p class="section-note">Every rule evaluated against this inspection, grouped by result. Each card cites the exact rule version, statutory reference, reasoning, evidence, and any officer review decision.</p>
+
+{% for status in status_order %}
+{% set checks = ctx.status_groups.get(status, []) %}
+<h3 class="subsection-title">{{ status_label(status) }} ({{ checks|length }})</h3>
+{% if checks %}
+{% for check in checks %}
+<table class="finding-card">
+  <tr>
+    <td class="f-label">Rule</td>
+    <td class="f-value"><strong>{{ check.rule_version.title }}</strong> <span class="rule-key-tag">({{ check.rule_version.rule.rule_key }})</span></td>
+  </tr>
+  <tr>
+    <td class="f-label">Reference</td>
+    <td class="f-value">{{ check.rule_version.rule_reference }}</td>
+  </tr>
+  <tr>
+    <td class="f-label">Source</td>
+    <td class="f-value">{{ short_source_label(check.rule_version.source_document) }} <span class="rule-key-tag">(locator: {{ check.rule_version.source_locator }})</span></td>
+  </tr>
+  <tr>
+    <td class="f-label">Version</td>
+    <td class="f-value center-value">v{{ check.rule_version.version_number }}</td>
+  </tr>
+  <tr>
+    <td class="f-label">Status</td>
+    <td class="f-value center-value"><span class="status-text-{{ status }}">{{ status_label(status) }}</span></td>
+  </tr>
+  <tr>
+    <td class="f-label">Confidence</td>
+    <td class="f-value center-value">{{ "%.0f"|format(check.confidence * 100) }}%</td>
+  </tr>
+  <tr>
+    <td class="f-label">Reason</td>
+    <td class="f-value">{{ wrap_long_tokens(check.reason) }}</td>
+  </tr>
+  <tr>
+    <td class="f-label">Evidence</td>
+    <td class="f-value">
+      {% for ev in check.evidence_items %}
+      <div class="evidence-line">[{{ ev.evidence_type }}] {{ wrap_long_tokens(ev.description) }}</div>
+      {% else %}
+      No evidence recorded for this check.
+      {% endfor %}
+    </td>
+  </tr>
+  <tr>
+    <td class="f-label">Reviewer Decision</td>
+    <td class="f-value">
+      {% for rd in check.review_decisions %}
+      <div class="reviewer-line">{{ rd.decision }} &rarr; {{ status_label(rd.final_status) }} by {{ rd.reviewer.full_name if rd.reviewer else "—" }}{% if rd.comment %}: {{ wrap_long_tokens(rd.comment) }}{% endif %}</div>
+      {% else %}
+      <span class="pending-tag">PENDING OFFICER REVIEW</span>
+      {% endfor %}
+    </td>
+  </tr>
+</table>
+{% endfor %}
+{% else %}
+<p class="none-note">None.</p>
 {% endif %}
 {% endfor %}
 
-<h2>Rule Versions Evaluated</h2>
-<table>
-  <tr><th>Rule Key</th><th>Version</th><th>Reference</th><th>Source Document</th><th>Locator</th></tr>
-  {% for rv in ctx.rule_version_snapshot %}
-  <tr>
-    <td>{{ rv.rule_key }}</td>
-    <td>v{{ rv.version_number }}</td>
-    <td>{{ rv.rule_reference }}</td>
-    <td>{{ rv.source_document }}</td>
-    <td>{{ rv.source_locator }}</td>
-  </tr>
-  {% endfor %}
+<!-- ================= AUDIT & LEGAL TRACEABILITY APPENDIX ================= -->
+
+<h2 class="section-title">Audit &amp; Legal Traceability Appendix</h2>
+<p class="section-note">Every rule version evaluated for this inspection, for audit purposes. Editing a rule creates a new version — this table reflects exactly the versions active when this inspection ran.</p>
+{% for src in ctx.unique_sources %}
+<p class="appendix-note long-value">[{{ loop.index }}] {{ src }}</p>
+{% endfor %}
+<table class="data-table" repeat="1">
+  <colgroup>
+    <col style="width:33%"><col style="width:7%"><col style="width:17%"><col style="width:7%"><col style="width:36%">
+  </colgroup>
+  <thead>
+    <tr><th>Rule Key</th><th>Version</th><th>Reference</th><th>Source</th><th>Locator</th></tr>
+  </thead>
+  <tbody>
+    {% for rv in ctx.rule_version_snapshot %}
+    <tr{% if loop.index0 % 2 == 1 %} class="alt-row"{% endif %}>
+      <td class="rule-key-cell">{{ break_identifier(rv.rule_key)|safe }}</td>
+      <td class="center">v{{ rv.version_number }}</td>
+      <td>{{ rv.rule_reference }}</td>
+      <td class="center">[{{ rv.source_index }}]</td>
+      <td>{{ rv.source_locator }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
 </table>
 
-<div class="footer">
-  Generated by LM-SCAN v1.0.0 on {{ ctx.generated_at.strftime("%Y-%m-%d %H:%M UTC") }}.
-  {{ ctx.disclaimer }}
-</div>
+<p class="section-note">{{ ctx.disclaimer }}</p>
 
 </body>
 </html>
