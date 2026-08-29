@@ -160,6 +160,20 @@ interface GLContext {
 
 const ctxMap = new WeakMap<HTMLDivElement, GLContext>();
 
+// True in every real browser (even one where actual context creation later
+// fails on a given GPU/driver -- that case is still handled by the
+// try/catch below via the existing CSS-gradient fallback). False in
+// environments that don't implement WebGL at all, e.g. jsdom under Vitest,
+// where `HTMLCanvasElement.getContext` exists but is an unimplemented stub
+// that logs a "Not implemented" warning and returns null for every call.
+// Checking for the constructor here means we never call `canvas.getContext`
+// (and never trigger OGL's own "unable to create webgl context" log) in an
+// environment that could not have produced a context anyway, instead of
+// discovering that the expensive way on every test render.
+const isWebGLAvailable = (): boolean =>
+  typeof window !== "undefined" &&
+  (typeof window.WebGL2RenderingContext !== "undefined" || typeof window.WebGLRenderingContext !== "undefined");
+
 const GradientWaves = ({
   horizonColor = "#5227FF",
   waveColor = "#FF9FFC",
@@ -194,6 +208,11 @@ const GradientWaves = ({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    if (!isWebGLAvailable()) {
+      setSupported(false);
+      return;
+    }
 
     let renderer: Renderer;
     try {

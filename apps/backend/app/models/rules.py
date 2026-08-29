@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -18,6 +18,20 @@ class Rule(Base, UUIDPKMixin, TimestampMixin):
     (Section 12)."""
 
     __tablename__ = "rules"
+    __table_args__ = (
+        # Defense in depth alongside the API-layer pattern validation
+        # (app/schemas/rules.py::RULE_KEY_PATTERN) — report rendering
+        # (app/reports/context.py::break_identifier) renders rule_key with
+        # HTML-escaping bypassed on the assumption it is always an
+        # uppercase/digit/hyphen identifier, so that assumption must hold at
+        # the database layer too, not only at the one API endpoint that
+        # currently creates rows here. POSIX ERE via Postgres's `~`, since
+        # SQLAlchemy has no cross-dialect regex-match construct.
+        CheckConstraint(
+            r"rule_key ~ '^[A-Z0-9]+(-[A-Z0-9]+)*$'",
+            name="ck_rules_rule_key_format",
+        ),
+    )
 
     rule_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

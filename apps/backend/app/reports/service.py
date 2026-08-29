@@ -13,6 +13,7 @@ from app.models.report import Report
 from app.models.user import User
 from app.reports.context import (
     STATUS_ORDER,
+    ReportContext,
     break_identifier,
     build_report_context,
     declaration_source_label,
@@ -42,10 +43,14 @@ _env.globals.update(
 )
 
 
-def render_report_html(inspection: Inspection, generated_by_name: str) -> str:
-    ctx = build_report_context(inspection, generated_by_name)
+def _render_html(ctx: ReportContext) -> str:
     template = _env.get_template("inspection_report.html.j2")
     return template.render(ctx=ctx)
+
+
+def render_report_html(inspection: Inspection, generated_by_name: str) -> str:
+    ctx = build_report_context(inspection, generated_by_name)
+    return _render_html(ctx)
 
 
 def html_to_pdf_bytes(html: str) -> bytes:
@@ -147,8 +152,13 @@ def _stamp_header_footer(pdf_bytes: bytes, *, inspection_number: str, app_versio
 
 
 def generate_report(db: Session, inspection: Inspection, generated_by: User, fmt: str = "PDF") -> Report:
-    html = render_report_html(inspection, generated_by.full_name)
+    # Built once and reused for both the HTML render and the PDF/metadata
+    # steps below (app_version, short_disclaimer, rule_version_snapshot) --
+    # this used to call build_report_context a second time here purely to
+    # read those three fields, redoing all of its sorting/grouping/list
+    # construction on every single report generation.
     ctx = build_report_context(inspection, generated_by.full_name)
+    html = _render_html(ctx)
 
     if fmt == "PDF":
         content = html_to_pdf_bytes(html)

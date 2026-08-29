@@ -276,11 +276,23 @@ def build_report_context(inspection: Inspection, generated_by_name: str) -> Repo
         )
 
         if _is_consistency_check(check):
-            # Cross-source consistency checks get their own compact section
-            # (Section 12) instead of appearing a second time among the
-            # general detailed findings below — nothing is dropped, the
-            # exact same check/result/evidence is still fully represented,
-            # just grouped where it reads far more compactly.
+            # Cross-source consistency checks additionally get a compact row
+            # in their own dedicated section (Section 12) for an at-a-glance
+            # view. This used to `continue` here, skipping the rest of the
+            # loop entirely -- which meant a consistency check counted in
+            # status_counts above but silently vanished from status_groups
+            # (Detailed Findings), priority_findings, and checklist_items,
+            # so a report could show "POTENTIAL NON-COMPLIANCE: 2" in the
+            # Status Summary while Priority Findings said "no findings" and
+            # Detailed Findings showed an empty "(0)" section for the exact
+            # same two checks. Falling through now instead means every
+            # section is built from the same set of checks and always
+            # reconciles with status_counts -- a consistency check appears
+            # once here (compact row) and once in Detailed Findings (full
+            # card, same pattern already used for Priority Findings, which
+            # is itself a compact preview of a card that also appears in
+            # Detailed Findings), never as a second, separately-counted
+            # finding.
             consistency_rows.append(
                 {
                     "check": check,
@@ -290,7 +302,6 @@ def build_report_context(inspection: Inspection, generated_by_name: str) -> Repo
                     "reviewer_action": "Verify" if check.status != "PASS" else "None",
                 }
             )
-            continue
 
         status_groups.setdefault(check.status, []).append(check)
 
