@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
+import { BrandLogo } from "../components/BrandLogo";
 import { FloatingDotsButton } from "../components/FloatingDotsButton";
 import GradientWaves from "../components/GradientWaves";
 import GradualBlur from "../components/GradualBlur";
@@ -40,7 +41,7 @@ export function LoginPage() {
     <div className="landing">
       <section className="hero">
         <div className="hero__waves">
-          {/* Tuned to LM-SCAN's own navy/blue palette rather than the
+          {/* Tuned to ReguLens's own navy/blue palette rather than the
               reference's purple/pink defaults — this is a compliance
               inspection tool, not a consumer product landing page. */}
           <GradientWaves
@@ -67,7 +68,7 @@ export function LoginPage() {
           />
         </div>
         <div className="hero__content">
-          <h1>LM-SCAN</h1>
+          <h1>ReguLens</h1>
           <p className="hero__tagline">AI-Assisted Online Legal Metrology Compliance Inspection</p>
           <p className="hero__subtext">
             Preliminary, AI-assisted compliance screening for packaged-commodity listings — built to help an
@@ -88,23 +89,50 @@ export function LoginPage() {
         {/* Softens the seam coming down from the hero's animated background
             into this section's plain background — a blurred fade instead
             of a hard cut, without changing either section's actual color. */}
-        <GradualBlur target="parent" position="top" height="6rem" strength={2} divCount={5} curve="bezier" exponential opacity={1} />
+        <GradualBlur target="parent" position="top" height="5rem" strength={2} divCount={5} curve="bezier" exponential opacity={1} />
         <div className="about__inner">
-          <h2>What LM-SCAN does</h2>
-          <p>
-            LM-SCAN retrieves a public product listing from a marketplace or quick-commerce platform, extracts
-            declarations from the page text, structured metadata, and product images via OCR, and evaluates them
-            against a source-traceable rule database derived from the Legal Metrology (Packaged Commodities)
-            Rules, 2011.
-          </p>
-          <p>
-            Every automated finding is explicitly labeled — <strong>PASS</strong>,{" "}
-            <strong>POTENTIAL_NON_COMPLIANCE</strong>, <strong>NEEDS_MANUAL_REVIEW</strong>,{" "}
-            <strong>NOT_APPLICABLE</strong>, or <strong>UNABLE_TO_VERIFY</strong> — with evidence and a
-            confidence score, and every report carries the disclaimer{" "}
-            <em>"Automated Preliminary Compliance Assessment — Subject to Verification by an Authorized Officer."</em>{" "}
-            LM-SCAN is not a legally binding decision maker.
-          </p>
+          <div className="about__card">
+            <h2>What ReguLens does</h2>
+            <p>
+              ReguLens retrieves a public product listing from a marketplace or quick-commerce platform, extracts
+              declarations from the page text, structured metadata, and product images via OCR, and evaluates them
+              against a source-traceable rule database derived from the Legal Metrology (Packaged Commodities)
+              Rules, 2011.
+            </p>
+            <p>
+              Every automated finding is explicitly labeled — <strong>PASS</strong>,{" "}
+              <strong>POTENTIAL_NON_COMPLIANCE</strong>, <strong>NEEDS_MANUAL_REVIEW</strong>,{" "}
+              <strong>NOT_APPLICABLE</strong>, or <strong>UNABLE_TO_VERIFY</strong> — with evidence and a
+              confidence score, and every report carries the disclaimer{" "}
+              <em>"Automated Preliminary Compliance Assessment — Subject to Verification by an Authorized Officer."</em>{" "}
+              ReguLens is not a legally binding decision maker.
+            </p>
+          </div>
+
+          <div className="about__card">
+            <h2>How ReguLens works</h2>
+            <ol className="about__steps">
+              <li>
+                <strong>Paste a listing URL.</strong> An inspector starts an inspection from a public
+                marketplace/quick-commerce product page, or uploads photos directly when a live fetch isn't
+                possible.
+              </li>
+              <li>
+                <strong>Automatic retrieval and OCR.</strong> ReguLens fetches the page, downloads the product
+                images, and reads the on-package declarations via OCR.
+              </li>
+              <li>
+                <strong>Rule-based compliance check.</strong> Every declaration is checked against a
+                source-traceable rule database derived from the Legal Metrology (Packaged Commodities) Rules,
+                2011 — a deterministic rule engine, never an opaque model call.
+              </li>
+              <li>
+                <strong>Officer review and reporting.</strong> Findings, evidence, and confidence scores are
+                handed to an authorized officer to confirm, override, or request more evidence before a final
+                report is generated.
+              </li>
+            </ol>
+          </div>
         </div>
       </section>
 
@@ -113,6 +141,9 @@ export function LoginPage() {
             sign-in card. */}
         <GradualBlur target="parent" position="top" height="6rem" strength={2} divCount={5} curve="bezier" exponential opacity={1} />
         <div className="login-card">
+          <div className="login-card__brand">
+            <BrandLogo variant="auth" />
+          </div>
           <h1>Sign in</h1>
           <p className="tagline">Authorized officer access only</p>
           <form onSubmit={handleSubmit}>

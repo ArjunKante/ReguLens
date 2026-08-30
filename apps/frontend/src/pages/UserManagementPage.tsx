@@ -37,7 +37,7 @@ export function UserManagementPage() {
   return (
     <div>
       <h1>User Management</h1>
-      <p className="page-subtitle">Admin-only: manage LM-SCAN accounts and roles.</p>
+      <p className="page-subtitle">Admin-only: manage ReguLens accounts and roles.</p>
 
       <div className="card" style={{ padding: 0, marginBottom: 24 }}>
         <table>

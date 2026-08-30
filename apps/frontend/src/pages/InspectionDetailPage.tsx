@@ -10,11 +10,33 @@ import {
 import AnimatedList from "../components/AnimatedList";
 import { ConfidenceBar } from "../components/ConfidenceBar";
 import { DisclaimerBanner } from "../components/DisclaimerBanner";
+import { DonutChart, type DonutChartDatum } from "../components/DonutChart";
 import { EvidenceImage } from "../components/EvidenceImage";
 import { StatusBadge } from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
-import type { ComplianceCheck, Declaration, EvidenceItem, InspectionDetail } from "../types";
+import type { ComplianceCheck, ComplianceStatus, Declaration, EvidenceItem, InspectionDetail } from "../types";
 import { ReviewPanel } from "../components/ReviewPanel";
+
+// Presentation-only metadata for the Final Results summary (donut + count
+// tiles) — every number still comes straight from
+// inspection.compliance_checks, this just supplies a color/label per
+// existing ComplianceStatus value. Order here is "most reassuring first"
+// (compliant, then issues, then not-applicable) for the summary view; the
+// full Evidence tab keeps its own "most urgent first" ordering below.
+const FINAL_RESULTS_STATUS_META: Record<ComplianceStatus, { label: string; shortLabel: string; color: string }> = {
+  PASS: { label: "Compliant", shortLabel: "PASS", color: "var(--status-pass)" },
+  POTENTIAL_NON_COMPLIANCE: { label: "Non-Compliant", shortLabel: "Potential Issue", color: "var(--status-violation)" },
+  NEEDS_MANUAL_REVIEW: { label: "Review", shortLabel: "Needs Manual Review", color: "var(--status-review)" },
+  UNABLE_TO_VERIFY: { label: "Unable to Verify", shortLabel: "", color: "var(--status-unable)" },
+  NOT_APPLICABLE: { label: "Not Applicable", shortLabel: "", color: "var(--status-na)" },
+};
+const FINAL_RESULTS_STATUS_ORDER: ComplianceStatus[] = [
+  "PASS",
+  "POTENTIAL_NON_COMPLIANCE",
+  "NEEDS_MANUAL_REVIEW",
+  "UNABLE_TO_VERIFY",
+  "NOT_APPLICABLE",
+];
 
 const PIPELINE_STAGE_LABELS: Record<string, string> = {
   FETCH: "Fetching product page",
@@ -56,7 +78,26 @@ export function InspectionDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [reportLink, setReportLink] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<{ imageId: string; ocrResultId: string | null } | null>(null);
+  const [activeResultTab, setActiveResultTab] = useState<"EVIDENCE" | "FINAL_RESULTS">("FINAL_RESULTS");
+  const [pendingFindingScroll, setPendingFindingScroll] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
+
+  // Deep-link from a Final Results "key finding" row to its full card in the
+  // Evidence tab: switch tabs, then (once the Evidence tab's content is
+  // actually in the DOM) scroll to and briefly highlight that finding. No
+  // data changes hands here — both tabs render from the same `inspection`
+  // state, so nothing is refetched or lost switching between them.
+  useEffect(() => {
+    if (activeResultTab !== "EVIDENCE" || !pendingFindingScroll) return;
+    const el = document.getElementById(`finding-${pendingFindingScroll}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setPendingFindingScroll(null);
+  }, [activeResultTab, pendingFindingScroll]);
+
+  function handleJumpToFinding(checkId: string) {
+    setActiveResultTab("EVIDENCE");
+    setPendingFindingScroll(checkId);
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -139,6 +180,23 @@ export function InspectionDetailPage() {
   }
   const statusOrder = ["POTENTIAL_NON_COMPLIANCE", "NEEDS_MANUAL_REVIEW", "UNABLE_TO_VERIFY", "PASS", "NOT_APPLICABLE"];
   const sortedDeclarations = [...inspection.declarations].sort((a, b) => a.field_name.localeCompare(b.field_name));
+
+  // Final Results tab: a summary of the same inspection.compliance_checks
+  // used above — same counts, same statuses, no separate scoring system.
+  const totalRulesEvaluated = inspection.compliance_checks.length;
+  const donutData: DonutChartDatum[] = FINAL_RESULTS_STATUS_ORDER.map((status) => ({
+    key: status,
+    label: FINAL_RESULTS_STATUS_META[status].label,
+    count: (groupedChecks[status] ?? []).length,
+    color: FINAL_RESULTS_STATUS_META[status].color,
+  }));
+  // "Important findings" for the at-a-glance summary: anything that isn't a
+  // clean PASS or an explicit NOT_APPLICABLE — the cases an officer actually
+  // needs to look at. Full detail for each stays in the Evidence tab; this
+  // is just a jump-off list.
+  const keyFindings = inspection.compliance_checks.filter(
+    (c) => c.status === "POTENTIAL_NON_COMPLIANCE" || c.status === "NEEDS_MANUAL_REVIEW" || c.status === "UNABLE_TO_VERIFY"
+  );
 
   return (
     <div>
@@ -231,6 +289,111 @@ export function InspectionDetailPage() {
         <>
           <DisclaimerBanner />
 
+          <div className="result-tabs" role="tablist" aria-label="Inspection result view">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeResultTab === "EVIDENCE"}
+              className={`result-tab${activeResultTab === "EVIDENCE" ? " result-tab--active" : ""}`}
+              onClick={() => setActiveResultTab("EVIDENCE")}
+            >
+              Evidence
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeResultTab === "FINAL_RESULTS"}
+              className={`result-tab${activeResultTab === "FINAL_RESULTS" ? " result-tab--active" : ""}`}
+              onClick={() => setActiveResultTab("FINAL_RESULTS")}
+            >
+              Final Results
+              <span className="result-tab__count">{totalRulesEvaluated}</span>
+            </button>
+          </div>
+
+          {activeResultTab === "FINAL_RESULTS" && (
+            <div>
+              <div className="final-results__hero">
+                <div>
+                  <p className="final-results__hero-label">Overall Inspection Status</p>
+                  <div className="final-results__hero-status">
+                    <StatusBadge status={inspection.overall_status} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3>Rule Evaluation Summary</h3>
+                <div className="final-results__summary">
+                  <DonutChart data={donutData} total={totalRulesEvaluated} />
+                  <div className="status-count-grid">
+                    {FINAL_RESULTS_STATUS_ORDER.map((status) => {
+                      const count = (groupedChecks[status] ?? []).length;
+                      if (count === 0) return null;
+                      const meta = FINAL_RESULTS_STATUS_META[status];
+                      return (
+                        <div key={status} className="status-count-tile">
+                          <span className="status-count-tile__dot" style={{ background: meta.color }} />
+                          <div>
+                            <div className="status-count-tile__count">{count}</div>
+                            <div className="status-count-tile__label">
+                              {meta.label}
+                              {meta.shortLabel ? ` · ${meta.shortLabel}` : ""}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: 14, marginBottom: 0 }}>
+                  Total Rules Evaluated: <strong>{totalRulesEvaluated}</strong>
+                </p>
+              </div>
+
+              <div className="card">
+                <h3>Key Findings</h3>
+                {keyFindings.length === 0 ? (
+                  <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+                    No potential issues or manual-review items were flagged.
+                  </p>
+                ) : (
+                  <ul className="key-findings-list">
+                    {keyFindings.map((check) => (
+                      <li key={check.id}>
+                        <span>
+                          <StatusBadge status={check.status} /> {check.rule.title}
+                        </span>
+                        <button
+                          type="button"
+                          className="key-findings-list__jump"
+                          onClick={() => handleJumpToFinding(check.id)}
+                        >
+                          View in Evidence →
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <h2>Generate Report</h2>
+              <div className="card">
+                <button onClick={() => handleReport("PDF")}>Generate PDF report</button>
+                <button className="secondary" onClick={() => handleReport("HTML")} style={{ marginLeft: 8 }}>
+                  Generate HTML report
+                </button>
+                {reportLink && (
+                  <p style={{ marginTop: 10 }}>
+                    <a href={reportLink} target="_blank" rel="noreferrer">Download report ↗</a>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeResultTab === "EVIDENCE" && (
+            <div>
           <h2>Legal Metrology Findings</h2>
           <p style={{ fontSize: 12.5, color: "var(--color-text-muted)", marginTop: -6 }}>
             Each finding cites the rule it checks, the reasoning, and the underlying evidence — click an evidence
@@ -259,7 +422,7 @@ export function InspectionDetailPage() {
                   displayScrollbar={checks.length > 3}
                   initialSelectedIndex={null}
                   renderItem={(check: ComplianceCheck) => (
-                    <div className={`card check-card status-${check.status}`}>
+                    <div id={`finding-${check.id}`} className={`card check-card status-${check.status}`}>
                       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
                         <strong>{check.rule.title}</strong>
                         <ConfidenceBar confidence={check.confidence} />
@@ -390,19 +553,8 @@ export function InspectionDetailPage() {
             ))}
             {inspection.images.length === 0 && <p style={{ fontSize: 13 }}>No images available.</p>}
           </div>
-
-          <h2>Generate Report</h2>
-          <div className="card">
-            <button onClick={() => handleReport("PDF")}>Generate PDF report</button>
-            <button className="secondary" onClick={() => handleReport("HTML")} style={{ marginLeft: 8 }}>
-              Generate HTML report
-            </button>
-            {reportLink && (
-              <p style={{ marginTop: 10 }}>
-                <a href={reportLink} target="_blank" rel="noreferrer">Download report ↗</a>
-              </p>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
     </div>
