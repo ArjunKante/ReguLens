@@ -52,7 +52,23 @@ a { color: var(--color-primary); }
   border-bottom: 1px solid rgba(255,255,255,0.12);
   margin-bottom: 12px;
 }
-.sidebar__brand small { display: block; font-weight: 400; font-size: 11px; opacity: 0.7; margin-top: 4px; }
+.sidebar__brand small { display: block; font-weight: 400; font-size: 11px; opacity: 0.7; margin-top: 8px; }
+
+/* Reusable brand mark (components/BrandLogo.tsx) — used in the sidebar, the
+   mobile top bar, and the sign-in card so the logo is never re-implemented
+   per page. The logo asset (public/regulens-logo.png) is a wide, landscape
+   image rendered at its own natural aspect ratio (height:auto) inside a
+   thin-margin white surface — legible on both the navy sidebar and the
+   dark sign-in card without editing the supplied image, and without
+   letterboxing it into a square the way a fixed width+height box would. */
+.brand-logo {
+  display: block;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.brand-logo img { display: block; width: 100%; height: auto; }
 .sidebar__nav { padding: 4px 20px 4px 26px; }
 .sidebar__user { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.12); margin-top: 12px; font-size: 12px; }
 .sidebar__user button { margin-top: 8px; }
@@ -186,23 +202,78 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 }
 .hero__secondary-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.7); }
 
-.about { position: relative; background: var(--color-bg); padding: 72px 24px; }
-.about__inner { max-width: 680px; margin: 0 auto; }
-.about__inner h2 { font-size: 22px; margin: 0 0 16px 0; }
-.about__inner p { font-size: 14px; line-height: 1.7; color: var(--color-text); margin: 0 0 14px 0; }
+/* Top padding (120px) is deliberately taller than the GradualBlur fade
+   above this section (height="5rem" = 80px in LoginPage.tsx) so the cards
+   below always start on plain, unblurred background — the blur softens
+   the hero->about seam at the very top of the section and fully
+   dissipates well before reaching them.
 
+   min-height/flex-centering mirrors .hero's own pattern below: this
+   section always fills at least one viewport, so clicking "Learn more"
+   (which scrolls to this section's top) never leaves the sign-in card
+   peeking in at the bottom of the screen — on a short viewport the two
+   cards center within the extra room instead of leaving it as dead space
+   below them, on a tall one there's simply more breathing room top/bottom. */
+.about {
+  position: relative;
+  background: var(--color-bg);
+  padding: 120px 24px 72px 24px;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+}
+.about__inner { max-width: 680px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 24px; }
+.about__card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 40px 44px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.07);
+}
+.about__card h2 { font-size: 22px; margin: 0 0 16px 0; }
+.about__card p { font-size: 14px; line-height: 1.7; color: var(--color-text); margin: 0 0 14px 0; }
+.about__card p:last-child { margin-bottom: 0; }
+.about__steps { margin: 0; padding-left: 20px; }
+.about__steps li { font-size: 14px; line-height: 1.7; color: var(--color-text); margin-bottom: 12px; }
+.about__steps li:last-child { margin-bottom: 0; }
+
+/* Sign-in section only (Section 4 of the ReguLens branding update): restyled
+   to a dark, centered card in the same navy language as the hero above it —
+   the hero/about sections above stay untouched. Fields, validation, and the
+   auth flow itself are unchanged; this is presentation only. */
 .login-shell {
   position: relative;
-  min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--color-bg);
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0b1830;
   padding: 48px 24px;
 }
 /* min(), not a fixed 360px: a phone narrower than 360px (still common,
    e.g. a 320px-wide device) would otherwise force the whole page to
    scroll horizontally just to show the login card. */
-.login-card { width: min(360px, 100%); background: #fff; border-radius: var(--radius); padding: 32px; box-shadow: var(--shadow); }
-.login-card h1 { text-align: center; color: var(--color-primary); }
-.login-card p.tagline { text-align: center; color: var(--color-text-muted); font-size: 12.5px; margin-bottom: 24px; }
+.login-card {
+  width: min(380px, 100%);
+  background: #111c34;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 36px 32px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.login-card__brand { margin-bottom: 22px; }
+.login-card h1 { text-align: left; color: #fff; font-size: 24px; }
+.login-card p.tagline { text-align: left; color: #a9b7d6; font-size: 12.5px; margin-bottom: 24px; }
+.login-card .form-row label { color: #a9b7d6; }
+.login-card input[type="email"], .login-card input[type="password"] {
+  background: #0b1830;
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.login-card input[type="email"]:focus, .login-card input[type="password"]:focus {
+  outline: none;
+  border-color: #5b9dff;
+}
 .error-text { color: var(--status-violation); font-size: 12.5px; margin-top: 8px; }
+/* Scoped override for the dark login card only — the base rule above (used
+   on every light-background page in the app) is otherwise unchanged. */
+.login-card .error-text { color: #ff8a80; }
 
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .stat-tile { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 14px 16px; }
@@ -341,6 +412,117 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 .mobile-drawer__link:hover { background: rgba(255, 255, 255, 0.08); }
 .mobile-drawer__link--active { background: rgba(91, 157, 255, 0.18); color: #fff; font-weight: 600; }
 
+/* ==========================================================================
+   Inspection result view — Evidence / Final Results tabs
+   (InspectionDetailPage.tsx). Both tabs render from the same already-loaded
+   inspection object; switching tabs never re-fetches or discards data.
+   ========================================================================== */
+.result-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid var(--color-border);
+  margin: 4px 0 20px 0;
+}
+.result-tab {
+  font: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: 0.02em;
+  padding: 10px 18px;
+  cursor: pointer;
+  border-radius: 0;
+}
+.result-tab:hover { background: #eef2f8; color: var(--color-primary); }
+.result-tab--active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+.result-tab .result-tab__count {
+  display: inline-block;
+  margin-left: 6px;
+  background: var(--color-border);
+  color: var(--color-text);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+}
+.result-tab--active .result-tab__count { background: var(--color-primary); color: #fff; }
+
+/* Final Results tab: overall status + donut + counts, a summary of the
+   existing rule-engine output — never a second scoring system. */
+.final-results__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: var(--color-primary-dark);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  margin-bottom: 18px;
+}
+.final-results__hero-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; margin: 0 0 4px 0; }
+.final-results__hero-status { display: flex; align-items: center; gap: 10px; }
+.final-results__hero-status .badge { font-size: 13px; padding: 4px 14px; }
+
+.final-results__summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 28px;
+  align-items: center;
+}
+.donut-chart { position: relative; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.donut-chart__center {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.donut-chart__total { font-size: 26px; font-weight: 700; color: var(--color-text); line-height: 1; }
+.donut-chart__total-label { font-size: 10px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 3px; }
+
+.status-count-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.status-count-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--color-surface);
+}
+.status-count-tile__dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.status-count-tile__count { font-size: 18px; font-weight: 700; line-height: 1.1; }
+.status-count-tile__label { font-size: 11px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+
+.key-findings-list { list-style: none; margin: 0; padding: 0; }
+.key-findings-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.key-findings-list li:last-child { border-bottom: none; }
+.key-findings-list__jump {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-primary);
+  text-decoration: underline;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 @media (max-width: 880px) {
   .sidebar { display: none; }
   .mobile-topbar { display: flex; }
@@ -358,6 +540,17 @@ input[type="text"], input[type="email"], input[type="password"], input[type="url
 
   .hero__content h1 { font-size: 30px; }
   .hero__tagline { font-size: 14px; }
+  .about { padding: 88px 16px 48px 16px; }
+  .about__inner { gap: 16px; }
+  .about__card { padding: 26px 22px; }
   .login-shell { padding: 24px 16px; }
   .login-card { padding: 24px; }
+
+  /* Donut + counts side-by-side stacks to a single column below ~600px so
+     neither the chart nor the count tiles get squeezed narrow enough to
+     overflow the card horizontally. */
+  .final-results__summary { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .final-results__hero { flex-direction: column; align-items: flex-start; }
+  .result-tabs { overflow-x: auto; }
+  .result-tab { padding: 10px 14px; white-space: nowrap; }
 }

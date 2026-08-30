@@ -73,7 +73,7 @@ export function NewInspectionPage() {
     <div>
       <h1>New Online Inspection</h1>
       <p className="page-subtitle">
-        Paste a product listing URL from a quick-commerce or e-commerce marketplace. LM-SCAN will
+        Paste a product listing URL from a quick-commerce or e-commerce marketplace. ReguLens will
         attempt automatic retrieval, extraction, OCR, and rule-based compliance screening.
       </p>
 

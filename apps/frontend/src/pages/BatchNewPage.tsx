@@ -50,7 +50,7 @@ export function BatchNewPage() {
     <div>
       <h1>New Batch Scan</h1>
       <p className="page-subtitle">
-        Paste a list of product listing URLs. LM-SCAN runs the same automatic retrieval, extraction,
+        Paste a list of product listing URLs. ReguLens runs the same automatic retrieval, extraction,
         OCR, and compliance screening as a single inspection across every URL, then ranks the results
         worst-first in a triage queue instead of one inspection at a time.
       </p>

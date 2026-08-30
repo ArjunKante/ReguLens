@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { BrandLogo } from "./BrandLogo";
 import LineSidebar from "./LineSidebar";
 import { MobileAccessQR } from "./MobileAccessQR";
 
@@ -71,7 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar__brand">
-          LM-SCAN
+          <BrandLogo variant="sidebar" />
           <small>Legal Metrology Compliance Inspection</small>
         </div>
         <div className="sidebar__nav">
@@ -129,12 +130,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span />
           <span />
         </button>
-        <span className="mobile-topbar__brand">LM-SCAN</span>
+        <span className="mobile-topbar__brand"><BrandLogo variant="topbar" /></span>
       </header>
       {mobileNavOpen && <div className="mobile-drawer__backdrop" onClick={() => setMobileNavOpen(false)} />}
       <nav className={`mobile-drawer${mobileNavOpen ? " mobile-drawer--open" : ""}`}>
         <div className="sidebar__brand">
-          LM-SCAN
+          <BrandLogo variant="sidebar" />
           <small>Legal Metrology Compliance Inspection</small>
         </div>
         <div className="mobile-drawer__nav">
